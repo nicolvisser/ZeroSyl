@@ -68,7 +68,7 @@ You should have the following structure inside your workspace:
 ├── checkpoints
 │   ├── 🔴 WavLM-Large.pt
 │   ├── 🔴 km10000-centroids.pt
-│   └── 🔴 ZeroSyl-Boost-layer-11-win-3-prom-0_5-steps-1k.pt
+│   └── 🔴 ZeroSyl-Boost-layer-11-win-3-prom-0_5-steps-25k.pt
 └── data
     ├── alignments
     │   └── LibriSpeech
@@ -97,7 +97,6 @@ python visualizations/view_raw_embeddings.py
 python visualizations/view_zerosyl_base_boundaries.py
 python visualizations/view_meanpooled_embeddings.py
 python visualizations/view_zerosyl_discrete_tokens.py
-python visualizations/view_boosted_embeddings_1k_steps.py
 python visualizations/view_boosted_embeddings_25k_steps.py
 ```
 
