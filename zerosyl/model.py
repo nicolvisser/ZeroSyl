@@ -12,7 +12,7 @@ FEATURE_RATE = 50.0
 
 
 class ZeroSylBase(WavLM):
-    """Zero-shot syllable segmentation model based on WavLM.
+    """Zero-resource syllable segmentation model based on WavLM.
 
     This class extends WavLM to perform unsupervised syllable boundary detection
     using prominence-based segmentation on feature norms, followed by meanpooling
@@ -203,7 +203,7 @@ class ZeroSylBase(WavLM):
 
 
 class ZeroSylDiscrete(ZeroSylBase):
-    """Zero-shot syllable segmentation model with discrete token quantization.
+    """Zero-resource syllable segmentation model with discrete token quantization.
 
     This class extends ZeroSylBase to add vector quantization capabilities, mapping
     continuous syllable embeddings to discrete tokens using k-means centroids and
