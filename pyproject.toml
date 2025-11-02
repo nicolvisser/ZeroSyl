@@ -1,0 +1,40 @@
+[project]
+name = "zerosyl"
+version = "0.1.0"
+description = ""
+authors = [
+    {name = "Nicol Visser",email = "vissernicol@gmail.com"}
+]
+license = {text = "MIT"}
+readme = "README.md"
+requires-python = ">=3.12,<3.14"
+dependencies = [
+    "torch (>=2.9.0,<3.0.0)",
+    "torchcodec (>=0.8.1,<0.9.0)",
+    "numpy (>=2.3.4,<3.0.0)",
+    "tqdm (>=4.67.1,<5.0.0)",
+    "scipy (>=1.16.3,<2.0.0)",
+    "faiss-cpu (>=1.12.0,<2.0.0)"
+]
+
+
+[build-system]
+requires = ["poetry-core>=2.0.0,<3.0.0"]
+build-backend = "poetry.core.masonry.api"
+
+[dependency-groups]
+dev = [
+    "isort (>=7.0.0,<8.0.0)",
+    "black (>=25.9.0,<26.0.0)",
+    "pre-commit (>=4.3.0,<5.0.0)",
+    "ipykernel (>=7.1.0,<8.0.0)",
+    "torchaudio (>=2.9.0,<3.0.0)",
+    "matplotlib (>=3.10.7,<4.0.0)",
+    "tgt (>=1.5,<2.0)",
+    "wandb (>=0.22.3,<0.23.0)",
+    "wandb[media] (>=0.22.3,<0.23.0)"
+]
+
+[tool.isort]
+profile = "black"
+known_third_party = ["wandb"]
