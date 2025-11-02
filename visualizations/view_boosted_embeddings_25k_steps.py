@@ -9,7 +9,7 @@ from torchcodec.decoders import AudioDecoder
 from zerosyl.model import ZeroSylBase
 
 root = Path(__file__).parent.parent
-checkpoint_path = root / "checkpoints/ZeroSyl-Boost-layer-11-win-3-prom-0_5-steps-1k.pt"
+checkpoint_path = root / "checkpoints/ZeroSyl-Boost-layer-11-win-3-prom-0_5-steps-25k.pt"
 waveforms_dir = root / "data/waveforms/LibriSpeech"
 alignments_dir = root / "data/alignments/LibriSpeech"
 STEM = "1272-128104-0001"
