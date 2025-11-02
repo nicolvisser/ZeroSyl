@@ -24,6 +24,7 @@ from zerosyl.wavlm import WavLM, WavLMConfig
 @dataclass
 class TrainConfig:
     # --- Wandb details ---
+    entity: str = "zerospeech"
     project: str = "zerosyl-boost-discrete"
     name: str = "layer-11-window-3-prominence-0.5-k-10000"
 
@@ -295,6 +296,7 @@ class Trainer:
         self.scaler = self.scaler_setup()
 
         self.run = wandb.init(
+            entity=cfg.entity,
             project=cfg.project,
             name=cfg.name,
             config=cfg.__dict__,
