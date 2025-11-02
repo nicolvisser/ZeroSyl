@@ -8,13 +8,12 @@
 - Don’t squash other people’s commits.
 - Check that your code works before pushing.
 - Report any broken code or inaccessible scripts.
-- KEEP IT SIMPLE STUPID!
 
 ### Setup
 
 #### Using poetry
 
-If you plan on making serious changes, such as adding packages or making a new release, then please use https://python-poetry.org/.
+If you plan on making serious changes, such as adding packages or making a new release, then please use [Poetry](https://python-poetry.org/). After it is installed, then `cd` into the cloned repo and run:
 
 ```bash
 poetry install
@@ -61,9 +60,39 @@ There is also an nn.Module in `train_boosting_model.py`:
 - ``class WavLMWithPredictionHead(WavLM):``
     - This one adds a nn.Linear layer at the end to project to the vocab size. This way we can train WavLM to predict the discovered syllable IDs.
 
+### Downloading the checkpoints and data
+
+You should have the following structure inside your workspace:
+```
+.
+├── checkpoints
+│   ├── 🔴 WavLM-Large.pt
+│   ├── 🔴 km10000-centroids.pt
+│   └── 🔴 ZeroSyl-Boost-layer-11-win-3-prom-0_5-steps-1k.pt
+└── data
+    ├── alignments
+    │   └── LibriSpeech
+    │       └── 🔴 dev-clean/*
+    ├── waveforms
+    │   └── LibriSpeech
+    │       └── 🟠 dev-clean/*
+    ├── 🟢 sample.TextGrid
+    └── 🟢 sample.flac
+```
+
+So go and download the missing thing from the following sources:
+
+| source | link |
+|--------|------|
+| 🔴     | https://github.com/nicolvisser/ZeroSyl/releases/tag/v0.1.0 |
+| 🟠     | https://www.openslr.org/12 |
+| 🟢     | Part of repo. No need to download. |
+
 ### Visualizations
 
-```
+There are a few examples scripts to visualize the results:
+
+```bash
 python visualizations/view_raw_embeddings.py
 python visualizations/view_zerosyl_base_boundaries.py
 python visualizations/view_meanpooled_embeddings.py
@@ -71,7 +100,9 @@ python visualizations/view_zerosyl_discrete_tokens.py
 python visualizations/view_boosted_embeddings_1k_steps.py
 ```
 
-In these examples (except the one with discrete tokens) you can play around with `ZeroSylBase`'s hyperparamters by modifying the following attributes right after the model was loaded:
+You can modify the `STEM` constant in these script if you want to plot different examples from LibriSpeech
+
+You can also play around with `ZeroSylBase`'s hyperparamters by modifying the following attributes right after the model was loaded:
 
 ```python
 model = ZeroSylBase.from_pretrained_checkpoint(checkpoint_path).cuda()
@@ -83,7 +114,7 @@ model.meanpool_layer: Optional[int] = None  # which layer to meanpool
 
 ### Formatting
 
-There is a pre-commit hook that runs the isort and black formatters.
+There is a pre-commit hook that runs the `isort` and `black` formatters.
 If your commit fails, just stage the new formatted code and commit again.
 
 If you want to format the code yourself, run:
