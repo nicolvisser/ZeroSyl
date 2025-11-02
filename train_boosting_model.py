@@ -58,7 +58,7 @@ class TrainConfig:
     lr_max: float = 2e-5
     lr_final: float = 2e-5
     n_linear_steps: int = 1000
-    n_decay_steps: int = 24000
+    n_decay_steps: int = 9000
 
 # fmt: ons
 
@@ -619,7 +619,7 @@ class Trainer:
 if __name__ == "__main__":
     trainer = Trainer(TrainConfig())
     trainer.train(
-        max_global_step=25000,
+        max_global_step=10000,
         log_every_n_global_steps=1,
-        validate_every_n_global_steps=1000,
+        validate_every_n_global_steps=500,
     )
