@@ -329,8 +329,8 @@ class Trainer:
         freeze(model.wavlm.encoder.pos_conv)
         # ---------------------------------------------------------------
         # * freeze the initial layernorm if not using prenorm
-        # if not model.wavlm.encoder.layer_norm_first:
-        freeze(model.wavlm.encoder.layer_norm)
+        if not model.wavlm.encoder.layer_norm_first:
+            freeze(model.wavlm.encoder.layer_norm)
         # ---------------------------------------------------------------
         # * freeze the first few transformer layers
         NUM_TRANSFORMER_LAYERS_TO_FREEZE = 11
