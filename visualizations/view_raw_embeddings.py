@@ -95,7 +95,7 @@ ax_tr.set_xlim(0, textgrid.end_time * s2f)
 
 # --- Bottom right ---
 ab_br = axes[1][1]
-im = ab_br.imshow(similarity_matrix, aspect="equal", origin="upper")
+im = ab_br.imshow(similarity_matrix, aspect="equal", origin="upper", vmin=0, vmax=1)
 ab_br.axis("off")
 
 plt.show()
