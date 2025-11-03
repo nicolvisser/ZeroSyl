@@ -31,7 +31,6 @@ class TrainConfig:
     # --- General training control ---
     device: str = "cuda"
     dtype: torch.dtype = torch.bfloat16
-    max_global_step: int = 25000
     accumulation_steps: int = 6
     grad_clip_max_norm: float = 10.0
     batch_size: int = 16
@@ -61,9 +60,6 @@ class TrainConfig:
     n_linear_steps: int = 1000
     n_decay_steps: int = 24000
 
-    # --- Logging and validation ---
-    log_every_n_global_steps: int = 1
-    validate_every_n_global_steps: int = 100
 # fmt: ons
 
 
