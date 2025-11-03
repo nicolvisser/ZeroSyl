@@ -41,8 +41,8 @@ class TrainConfig:
     # --- Data configuration ---
     train_wav_dir: str = "/home/nicolvisser/Data/waveforms/LibriSpeech"
     train_teacher_dir: str = "/home/nicolvisser/Data/zerosyl/layer-11-window-3-prominence-0.5/embeddings-and-lengths"
-    train_wav_pattern: str = "train-clean-100/**/*.flac"
-    train_teacher_pattern: str = "train-clean-100/**/*.pt"
+    train_wav_pattern: str = "train-clean*/**/*.flac"
+    train_teacher_pattern: str = "train-clean*/**/*.pt"
 
     valid_wav_dir: str = "/home/nicolvisser/Data/waveforms/LibriSpeech"
     valid_teacher_dir: str = "/home/nicolvisser/Data/zerosyl/layer-11-window-3-prominence-0.5/embeddings-and-lengths"
@@ -520,7 +520,7 @@ class Trainer:
         # --- Bottom right ---
         ax2 = axes[1][1]
         im = ax2.imshow(
-            similarity_matrix, aspect="equal", origin="upper"
+            similarity_matrix, aspect="equal", origin="upper", vmin=0, vmax=1
         )  # equal for square pixels
         ax2.axis("off")
 

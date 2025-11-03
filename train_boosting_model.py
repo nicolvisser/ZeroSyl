@@ -526,7 +526,7 @@ class Trainer:
         # --- Bottom right ---
         ax2 = axes[1][1]
         im = ax2.imshow(
-            similarity_matrix, aspect="equal", origin="upper"
+            similarity_matrix, aspect="equal", origin="upper", vmin=0, vmax=1
         )  # equal for square pixels
         ax2.axis("off")
 
