@@ -25,13 +25,12 @@ from zerosyl.wavlm import WavLM, WavLMConfig
 class TrainConfig:
     # --- Wandb details ---
     entity: str = "zerospeech"
-    project: str = "zerosyl-boost-discrete"
+    project: str = "zerosyl-boost-continuous"
     name: str = "layer-11-window-3-prominence-0.5-k-10000"
 
     # --- General training control ---
     device: str = "cuda"
     dtype: torch.dtype = torch.bfloat16
-    max_global_step: int = 25000
     accumulation_steps: int = 6
     grad_clip_max_norm: float = 10.0
     batch_size: int = 16
@@ -41,12 +40,12 @@ class TrainConfig:
 
     # --- Data configuration ---
     train_wav_dir: str = "/home/nicolvisser/Data/waveforms/LibriSpeech"
-    train_teacher_dir: str = "/home/nicolvisser/Data/zerosyl/layer-11-window-3-prominence-0.5/tokens-and-lengths"
+    train_teacher_dir: str = "/home/nicolvisser/Data/zerosyl/layer-11-window-3-prominence-0.5/embeddings-and-lengths"
     train_wav_pattern: str = "train*/**/*.flac"
     train_teacher_pattern: str = "train*/**/*.pt"
 
     valid_wav_dir: str = "/home/nicolvisser/Data/waveforms/LibriSpeech"
-    valid_teacher_dir: str = "/home/nicolvisser/Data/zerosyl/layer-11-window-3-prominence-0.5/tokens-and-lengths"
+    valid_teacher_dir: str = "/home/nicolvisser/Data/zerosyl/layer-11-window-3-prominence-0.5/embeddings-and-lengths"
     valid_wav_pattern: str = "dev*/**/*.flac"
     valid_teacher_pattern: str = "dev*/**/*.pt"
 
@@ -59,11 +58,8 @@ class TrainConfig:
     lr_max: float = 2e-5
     lr_final: float = 2e-5
     n_linear_steps: int = 1000
-    n_decay_steps: int = 24000
+    n_decay_steps: int = 9000
 
-    # --- Logging and validation ---
-    log_every_n_global_steps: int = 1
-    validate_every_n_global_steps: int = 100
 # fmt: ons
 
 
@@ -71,7 +67,7 @@ class WavLMWithPredictionHead(nn.Module):
     def __init__(self, wavlm_cfg: WavLMConfig, train_cfg: TrainConfig):
         super().__init__()
         self.wavlm = WavLM(wavlm_cfg)
-        self.proj = nn.Linear(wavlm_cfg.encoder_embed_dim, train_cfg.target_vocab_size)
+        self.proj = nn.Linear(wavlm_cfg.encoder_embed_dim, wavlm_cfg.encoder_embed_dim)
 
     def forward(
         self,
@@ -99,7 +95,7 @@ class WavLMWithPredictionHead(nn.Module):
         return model.to(device)
 
 
-class WaveformWithFramewiseLabelsDataset(Dataset):
+class WaveformWithFramewiseFeaturesDataset(Dataset):
     def __init__(
         self,
         wav_dir: str,
@@ -164,34 +160,42 @@ class WaveformWithFramewiseLabelsDataset(Dataset):
         # load the teacher data
         teacher_data = torch.load(teacher_path)
         assert isinstance(teacher_data, dict)
-        labels = torch.repeat_interleave(teacher_data['tokens'], teacher_data['lengths'], dim=0)
-        assert labels.ndim == 1
+        features = torch.repeat_interleave(teacher_data['embeddings'], teacher_data['lengths'], dim=0)
+        assert features.ndim == 2
 
-        if len(labels) != available_frames:
-            if abs(len(labels) - available_frames) > 2:
+        if len(features) != available_frames:
+            if abs(len(features) - available_frames) > 2:
                 raise ValueError(
-                    f"too big of a mismatch between lengths of labels and expected features. check data"
+                    f"too big of a mismatch between lengths of targets and expected features. check data"
                 )
-            if len(labels) < available_frames:
-                print(len(labels), available_frames)
+            if len(features) < available_frames:
+                print(len(features), available_frames)
                 raise ValueError(
                     "the teacher data should at least be as long as the expected feature lengths. check data"
                 )
             # otherwise just drop the last teacher frame or two. no biggy.
             
-        labels = labels[start_frame:stop_frame]
+        features = features[start_frame:stop_frame]
 
-        return wav, labels, duration_frames
+        return wav, features, duration_frames
 
     def collate(
         self,
         batch: List[Tuple[torch.Tensor, torch.Tensor, int]],
     ) -> Tuple[torch.Tensor, torch.Tensor, List[int]]:
-        wavs, labels, seqlens = zip(*batch)
+        wavs, features_list, seqlens = zip(*batch)
         wavs = pad_sequence(wavs, batch_first=True)
-        labels = pad_sequence(labels, batch_first=True)
+        
+        bsz = len(seqlens)
+        maxlen = max(seqlens)
+        emb_dim = features_list[0].size(-1)
+
+        features = torch.zeros(bsz, maxlen, emb_dim)
+        for b,(f,l) in enumerate(zip(features_list, seqlens)):
+            features[b,:l] = f
+
         seqlens = torch.tensor(seqlens)
-        return wavs, labels, seqlens
+        return wavs, features, seqlens
 
 
 class LinearRampCosineDecayScheduler(LRScheduler):
@@ -258,7 +262,7 @@ class Trainer:
     def __init__(self, cfg: TrainConfig):
         self.cfg = cfg
 
-        train_dataset = WaveformWithFramewiseLabelsDataset(
+        train_dataset = WaveformWithFramewiseFeaturesDataset(
             wav_dir=cfg.train_wav_dir,
             teacher_dir=cfg.train_teacher_dir,
             wav_pattern=cfg.train_wav_pattern,
@@ -266,7 +270,7 @@ class Trainer:
             max_duration=cfg.max_duration,
             normalize=cfg.normalize,
         )
-        valid_dataset = WaveformWithFramewiseLabelsDataset(
+        valid_dataset = WaveformWithFramewiseFeaturesDataset(
             wav_dir=cfg.valid_wav_dir,
             teacher_dir=cfg.valid_teacher_dir,
             wav_pattern=cfg.valid_wav_pattern,
@@ -333,8 +337,8 @@ class Trainer:
         freeze(model.wavlm.encoder.pos_conv)
         # ---------------------------------------------------------------
         # * freeze the initial layernorm if not using prenorm
-        # if not model.wavlm.encoder.layer_norm_first:
-        freeze(model.wavlm.encoder.layer_norm)
+        if not model.wavlm.encoder.layer_norm_first:
+            freeze(model.wavlm.encoder.layer_norm)
         # ---------------------------------------------------------------
         # * freeze the first few transformer layers
         NUM_TRANSFORMER_LAYERS_TO_FREEZE = 11
@@ -363,39 +367,28 @@ class Trainer:
         return None
 
     def train_step(self, batch):
-        wavs, labels, seqlens = batch
+        wavs, targets, seqlens = batch
         wavs = wavs.to(self.cfg.device)
-        labels = labels.to(self.cfg.device)
         seqlens = seqlens.to(self.cfg.device)
+
         padding_mask = (
-            torch.arange(labels.size(-1), device=self.cfg.device)[None, :]
+            torch.arange(targets.size(-1), device=self.cfg.device)[None, :]
             >= seqlens[:, None]
         )
         logits, mask = self.model(wavs, padding_mask, mask=True)
-        minlen = min(logits.size(-2), labels.size(-1))
+
+        targets = targets.to(self.cfg.device)
+
+        minlen = min(logits.size(-2), targets.size(-1))
         logits = logits[:, :minlen, :]
-        labels = labels[:, :minlen]
         mask = mask[:, :minlen]
-        loss = torch.nn.functional.cross_entropy(logits[mask], labels[mask])
+        targets = targets[:, :minlen]
+
+        loss = torch.nn.functional.mse_loss(logits[mask], targets[mask])
         return loss
 
     def valid_step(self, batch):
-        wavs, labels, seqlens = batch
-        wavs = wavs.to(self.cfg.device)
-        labels = labels.to(self.cfg.device)
-        seqlens = seqlens.to(self.cfg.device)
-        padding_mask = (
-            torch.arange(labels.size(-1), device=self.cfg.device)[None, :]
-            >= seqlens[:, None]
-        )
-        logits, mask = self.model(wavs, padding_mask, mask=True)
-        minlen = min(logits.size(-2), labels.size(-1))
-        logits = logits[:, :minlen, :]
-        labels = labels[:, :minlen]
-        mask = mask[:, :minlen]
-        loss = torch.nn.functional.cross_entropy(logits[mask], labels[mask])
-        accuracy = (logits[mask].argmax(-1) == labels[mask]).float().mean()
-        return loss, accuracy
+        return self.train_step(batch)
 
     def train_epoch(self) -> Generator[dict, None, None]:
         """Yields step information for one epoch of training"""
@@ -446,22 +439,19 @@ class Trainer:
     def validate(self):
         self.model.eval()
         losses = []
-        accuracies = []
         for batch in tqdm(
             self.valid_loader, desc="Validating", position=1, leave=False
         ):
-            loss, accuracy = self.valid_step(batch)
+            loss = self.valid_step(batch)
             losses.append(loss.item())
-            accuracies.append(accuracy.item())
         loss = sum(losses) / len(losses)
-        accuracy = sum(accuracies) / len(accuracies)
         if loss <= self.best_loss:
             self.best_loss = loss
             self.save_models()
         else:
             print(f"val/loss {loss:.4f} was not in top 1")
         img_path = self.save_similarity_plot()
-        return loss, accuracy, img_path
+        return loss, img_path
 
     def save_models(self):
         # save the full model with prediction head parameters
@@ -530,7 +520,7 @@ class Trainer:
         # --- Bottom right ---
         ax2 = axes[1][1]
         im = ax2.imshow(
-            similarity_matrix, aspect="equal", origin="upper"
+            similarity_matrix, aspect="equal", origin="upper", vmin=0, vmax=1
         )  # equal for square pixels
         ax2.axis("off")
 
@@ -596,9 +586,8 @@ class Trainer:
                 log_flag = self.current_global_step % log_every_n_global_steps == 0
 
                 if self.current_global_step % validate_every_n_global_steps == 0:
-                    val_loss, val_accuracy, img_path = self.validate()
+                    val_loss, img_path = self.validate()
                     log_data["val/loss"] = val_loss
-                    log_data["val/accuracy"] = val_accuracy
                     log_data["images/similarity"] = wandb.Image(img_path)
                     log_flag = True
 
@@ -623,7 +612,7 @@ class Trainer:
 if __name__ == "__main__":
     trainer = Trainer(TrainConfig())
     trainer.train(
-        max_global_step=25000,
+        max_global_step=10000,
         log_every_n_global_steps=1,
-        validate_every_n_global_steps=1000,
+        validate_every_n_global_steps=500,
     )
