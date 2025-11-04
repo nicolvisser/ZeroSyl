@@ -41,13 +41,13 @@ class TrainConfig:
     # --- Data configuration ---
     train_wav_dir: str = "/home/nicolvisser/Data/waveforms/LibriSpeech"
     train_teacher_dir: str = "/home/nicolvisser/Data/zerosyl/layer-11-window-3-prominence-0.5/embeddings-and-lengths"
-    train_wav_pattern: str = "train-clean*/**/*.flac"
-    train_teacher_pattern: str = "train-clean*/**/*.pt"
+    train_wav_pattern: str = "train*/**/*.flac"
+    train_teacher_pattern: str = "train*/**/*.pt"
 
     valid_wav_dir: str = "/home/nicolvisser/Data/waveforms/LibriSpeech"
     valid_teacher_dir: str = "/home/nicolvisser/Data/zerosyl/layer-11-window-3-prominence-0.5/embeddings-and-lengths"
-    valid_wav_pattern: str = "dev-clean/**/*.flac"
-    valid_teacher_pattern: str = "dev-clean/**/*.pt"
+    valid_wav_pattern: str = "dev*/**/*.flac"
+    valid_teacher_pattern: str = "dev*/**/*.pt"
 
     # --- Model configuration ---
     target_vocab_size: int = 10000
