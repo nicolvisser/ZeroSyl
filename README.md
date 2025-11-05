@@ -3,11 +3,12 @@
 ## Development
 
 ### General rules:
-- Don't push to `master`, use branches.
+- Don't push to `master`, use branches and pull requests.
+- Prepend your username to branches you create e.g. `nicolvisser-feature-x` or `kamperh-patch-1` 
 - Keep branches small and focused.
-- Don’t squash other people’s commits.
-- Check that your code works before pushing.
-- Report any broken code or inaccessible scripts.
+- Check that your code works before pull requests.
+- Report any broken code or inaccessible scripts (or fix them).
+- Don't let the rules discourage you from contributing. We can always fix things if they break.
 
 ### Setup
 
@@ -34,7 +35,7 @@ pip install -e .
 Install dev dependencies:
 
 ```bash
-pip install isort black pre-commit ipykernel torchaudio matplotlib tgt
+pip install isort black pre-commit ipykernel torchaudio matplotlib tgt pydub scikit-learn
 ```
 
 Install training dependencies:
@@ -61,6 +62,19 @@ There is also an nn.Module in `train_boosting_model.py`:
     - This one adds a nn.Linear layer at the end to project to the vocab size. This way we can train WavLM to predict the discovered syllable IDs.
 
 ### Downloading the checkpoints and data
+
+We will upload checkpoints and data as releases on GitHub.
+
+Each release will be linked to a commit with a git tag such as `v0.1.0`. The code at that commit will be in a working condition and any required checkpoints or data will be in the Assets section of the corresponding release.
+
+For example you could go to the [releases](https://github.com/nicolvisser/ZeroSyl/releases) page. Then perhaps see that [v0.1.0](https://github.com/nicolvisser/ZeroSyl/tree/v0.1.0) is the latest release. Then checkout the code with:
+
+```
+git checkout v0.1.0
+```
+You will then look at that README for instructions on how to download the required checkpoints and data from the release page.
+
+#### Instructions for v0.1.0:
 
 You should have the following structure inside your workspace:
 ```
