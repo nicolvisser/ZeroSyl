@@ -631,6 +631,7 @@ class Trainer:
                 log_data = {
                     "train/loss": train_loss,
                     "trainer/epoch": self.current_epoch,
+                    "trainer/lr": self.scheduler.get_lr()[0]
                 }
 
                 log_flag = self.current_global_step % log_every_n_global_steps == 0
@@ -647,7 +648,7 @@ class Trainer:
                         {
                             "epoch": f"{self.current_epoch}",
                             "lr": f"{self.scheduler.get_lr()[0]:.1e}",
-                            "train/loss": f"{log_data['train/loss']:.4f}",
+                            "train/loss": f"{train_loss:.4f}",
                             "val/loss": f"{self.best_loss:.4f}",
                         }
                     )
