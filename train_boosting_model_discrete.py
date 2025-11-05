@@ -58,10 +58,10 @@ class TrainConfig:
 
     # --- Optimizer / learning rate schedule ---
     lr_init: float = 1e-7
-    lr_max: float = 2e-5
-    lr_final: float = 2e-4
+    lr_max: float = 5e-5
+    lr_final: float = 1e-6
     n_linear_steps: int = 1000
-    n_decay_steps: int = 24000
+    n_decay_steps: int = 14000
 
 # fmt: ons
 
@@ -502,32 +502,18 @@ class Trainer:
             accuracies.append(accuracy.item())
         loss = sum(losses) / len(losses)
         accuracy = sum(accuracies) / len(accuracies)
-        if loss <= self.best_loss:
-            self.best_loss = loss
-            self.save_models()
-        else:
-            print(f"val/loss {loss:.4f} was not in top 1")
-        img_path = self.save_similarity_plot()
-        return loss, accuracy, img_path
 
-    def save_models(self):
-        # save the full model with prediction head parameters
-        checkpoint_path = Path(self.run.dir) / "best.full.pt"
-        checkpoint = {
-            "model": self.model.state_dict(),
-            "wavlm_cfg": self.model.wavlm.cfg.__dict__,
-            "train_cfg": self.cfg,
-        }
-        Path(checkpoint_path).parent.mkdir(parents=True, exist_ok=True)
-        torch.save(checkpoint, checkpoint_path)
-        # save only the wavlm model in the format of https://github.com/microsoft/unilm/tree/master/wavlm
-        checkpoint_path = Path(self.run.dir) / "best.pt"
+        # save the wavlm model with step number
+        checkpoint_path = Path(self.run.dir) / f"step-{self.current_global_step}.pt"
         checkpoint = {
             "model": self.model.wavlm.state_dict(),
             "cfg": self.model.wavlm.cfg.__dict__,
         }
         Path(checkpoint_path).parent.mkdir(parents=True, exist_ok=True)
         torch.save(checkpoint, checkpoint_path)
+
+        img_path = self.save_similarity_plot()
+        return loss, accuracy, img_path
 
     def save_similarity_plot(self):
         decoder = AudioDecoder("data/sample.flac", sample_rate=16000, num_channels=1)
@@ -600,8 +586,10 @@ class Trainer:
         ax3.set_yticklabels(ytickslabels)
         ax3.get_xaxis().set_visible(False)
 
-        img_path = Path(self.run.dir) / f"similarity-step-{self.current_global_step}.png"
+        img_path = Path(self.run.dir) / f"similarity-step-{self.current_global_step}.svg"
+        fig.savefig(img_path)
 
+        img_path = Path(self.run.dir) / f"similarity-step-{self.current_global_step}.png"
         fig.savefig(img_path)
 
         return img_path
@@ -671,7 +659,7 @@ class Trainer:
 if __name__ == "__main__":
     trainer = Trainer(TrainConfig())
     trainer.train(
-        max_global_step=25000,
+        max_global_step=15000,
         log_every_n_global_steps=1,
         validate_every_n_global_steps=1000,
     )
