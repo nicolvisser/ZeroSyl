@@ -29,9 +29,9 @@ class ZeroSylBase(WavLM):
             If None, uses the final output layer of WavLM. Default is None.
     """
 
-    boundary_layer: int = 11  # to compute norms
+    boundary_layer: int = 13  # to compute norms
     window_size: int = 3  # for norm smoothing
-    prominence: float = 0.5  # for peak detection
+    prominence: float = 0.45  # for peak detection
     meanpool_layer: Optional[int] = None  # layer to meanpool
 
     # ------------------------- core methods -------------------------
@@ -82,6 +82,8 @@ class ZeroSylBase(WavLM):
         """
         assert wav.ndim == 2
         assert wav.size(0) == 1
+        if self.cfg.normalize:
+            wav = torch.nn.functional.layer_norm(wav, wav.shape)
         wav = torch.nn.functional.pad(wav, ((400 - 320 // 2), (400 - 320 // 2)))
         return wav
 
