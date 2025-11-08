@@ -26,7 +26,7 @@ class TrainConfig:
     # --- Wandb details ---
     entity: str = "zerospeech"
     project: str = "zerosyl-boost-continuous"
-    name: str = "layer-11-window-3-prominence-0.5-k-10000"
+    name: str = "v0.2.0"
 
     # --- General training control ---
     device: str = "cuda"
@@ -35,8 +35,11 @@ class TrainConfig:
     grad_clip_max_norm: float = 10.0
     batch_size: int = 16
     num_workers: int = 16
-    max_duration: float = 15.62
+    max_duration: float = 12.5
     normalize: bool = True
+    use_noise_and_overlap: bool = True
+    mixing_prob: float = 0.2
+    noise_mixing_prob: float = 0.0
 
     # --- Data configuration ---
     train_wav_dir: str = "/home/nicolvisser/Data/waveforms/LibriSpeech"
@@ -56,9 +59,9 @@ class TrainConfig:
     # --- Optimizer / learning rate schedule ---
     lr_init: float = 1e-7
     lr_max: float = 2e-5
-    lr_final: float = 2e-5
+    lr_final: float = 2e-4
     n_linear_steps: int = 1000
-    n_decay_steps: int = 9000
+    n_decay_steps: int = 24000
 
 # fmt: ons
 
@@ -104,6 +107,9 @@ class WaveformWithFramewiseFeaturesDataset(Dataset):
         teacher_pattern: str,
         max_duration: float = float("inf"),
         normalize: bool = True,
+        use_noise_and_overlap: bool = False,
+        mixing_prob: float = 0.2,
+        noise_mixing_prob: float = 0.0,
     ):
         assert (
             max_duration / 0.02 % 1 == 0
@@ -111,6 +117,9 @@ class WaveformWithFramewiseFeaturesDataset(Dataset):
         self.max_duration = max_duration
 
         self.normalize = normalize
+        self.use_noise_and_overlap = use_noise_and_overlap
+        self.mixing_prob = mixing_prob
+        self.noise_mixing_prob = noise_mixing_prob
 
         self.wav_paths = {p.stem: p for p in Path(wav_dir).glob(wav_pattern)}
         assert len(self.wav_paths) > 0
@@ -151,6 +160,44 @@ class WaveformWithFramewiseFeaturesDataset(Dataset):
 
         if self.normalize:
             wav = torch.nn.functional.layer_norm(audio.data, audio.data.shape)
+
+        L = wav.size(-1)
+
+        if self.use_noise_and_overlap:
+            # Source: [1] https://arxiv.org/pdf/2110.13900, page 4, algorithm 1.
+
+            if random.random() <= self.mixing_prob:
+                r = random.uniform(-5,5) # mixing energy ratio
+                if random.random() <= self.noise_mixing_prob:
+                    raise NotImplementedError("Mixing with noise is not yet implemented. Try mixing with overlap only.")
+                    # need to load external noise here
+                    wav_sec = None
+                else:
+                    # load secondary utterance
+                    idx_sec = random.randrange(0,self.__len__(),1)
+                    stem_sec = self.stems[idx_sec]
+                    wav_sec_path = self.wav_paths[stem_sec]
+                    decoder = AudioDecoder(wav_sec_path, sample_rate=16000, num_channels=1)
+                    wav_sec = decoder.get_all_samples().data
+
+                wav_sec = torch.nn.functional.layer_norm(wav_sec, wav_sec.shape)
+                L_sec = wav_sec.size(-1)
+                
+                # mix length
+                l = random.randrange(0,L//2,2) 
+                l = min(l, L_sec)
+
+                # start indices
+                s_pri = random.randrange(0,L-l,1) if L-l > 0 else 0
+                s_sec = random.randrange(0,L_sec-l,1) if L_sec-l > 0 else 0
+
+                # energies
+                E_pri = (wav**2).mean().item()
+                E_sec = (wav_sec**2).mean().item()
+
+                # scale and mix
+                scl = math.sqrt(E_pri / (10**(r/10)*E_sec))
+                wav[:,s_pri:s_pri+l] = wav[:,s_pri:s_pri+l] + scl*wav_sec[:,s_sec:s_sec+l]
 
         # pad such that output of model will give exactly `duration_frames` frames
         wav = torch.nn.functional.pad(
@@ -269,6 +316,9 @@ class Trainer:
             teacher_pattern=cfg.train_teacher_pattern,
             max_duration=cfg.max_duration,
             normalize=cfg.normalize,
+            use_noise_and_overlap=cfg.use_noise_and_overlap,
+            mixing_prob=cfg.mixing_prob,
+            noise_mixing_prob=cfg.noise_mixing_prob,
         )
         valid_dataset = WaveformWithFramewiseFeaturesDataset(
             wav_dir=cfg.valid_wav_dir,
@@ -581,6 +631,7 @@ class Trainer:
                 log_data = {
                     "train/loss": train_loss,
                     "trainer/epoch": self.current_epoch,
+                    "trainer/lr": self.scheduler.get_lr()[0]
                 }
 
                 log_flag = self.current_global_step % log_every_n_global_steps == 0
@@ -597,7 +648,7 @@ class Trainer:
                         {
                             "epoch": f"{self.current_epoch}",
                             "lr": f"{self.scheduler.get_lr()[0]:.1e}",
-                            "train/loss": f"{log_data['train/loss']:.4f}",
+                            "train/loss": f"{train_loss:.4f}",
                             "val/loss": f"{self.best_loss:.4f}",
                         }
                     )
@@ -612,7 +663,7 @@ class Trainer:
 if __name__ == "__main__":
     trainer = Trainer(TrainConfig())
     trainer.train(
-        max_global_step=10000,
+        max_global_step=25000,
         log_every_n_global_steps=1,
-        validate_every_n_global_steps=500,
+        validate_every_n_global_steps=1000,
     )
