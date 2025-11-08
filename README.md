@@ -65,24 +65,25 @@ There is also an nn.Module in `train_boosting_model.py`:
 
 We will upload checkpoints and data as releases on GitHub.
 
-Each release will be linked to a commit with a git tag such as `v0.1.0`. The code at that commit will be in a working condition and any required checkpoints or data will be in the Assets section of the corresponding release.
+Each release will be linked to a commit with a git tag such as `v0.2.0`. The code at that commit will be in a working condition and any required checkpoints or data will be in the Assets section of the corresponding release.
 
-For example you could go to the [releases](https://github.com/nicolvisser/ZeroSyl/releases) page. Then perhaps see that [v0.1.0](https://github.com/nicolvisser/ZeroSyl/tree/v0.1.0) is the latest release. Then checkout the code with:
+For example you could go to the [releases](https://github.com/nicolvisser/ZeroSyl/releases) page. Then perhaps see that [v0.2.0](https://github.com/nicolvisser/ZeroSyl/tree/v0.2.0) is the latest release. Then checkout the code with:
 
 ```
-git checkout v0.1.0
+git checkout v0.2.0
 ```
 You will then look at that README for instructions on how to download the required checkpoints and data from the release page.
 
-#### Instructions for v0.1.0:
+#### Instructions for v0.2.0:
 
 You should have the following structure inside your workspace:
 ```
 .
 ├── checkpoints
-│   ├── 🔴 WavLM-Large.pt
-│   ├── 🔴 km10000-centroids.pt
-│   └── 🔴 ZeroSyl-Boost-layer-11-win-3-prom-0_5-steps-25k.pt
+│   ├── 🟣 WavLM-Large.pt
+│   ├── 🔴 km10000-centroids-v020.pt
+|   ├── 🔴 zerosyl-boost-v020-step-5000.pt
+│   └── 🔴 zerosyl-boost-v020-step-15000.pt
 └── data
     ├── alignments
     │   └── LibriSpeech
@@ -98,37 +99,18 @@ So go and download the missing thing from the following sources:
 
 | source | link |
 |--------|------|
-| 🔴     | https://github.com/nicolvisser/ZeroSyl/releases/tag/v0.1.0 |
+| 🟣     | https://github.com/microsoft/unilm/tree/master/wavlm |
+| 🔴     | https://github.com/nicolvisser/ZeroSyl/releases/tag/v0.2.0 |
 | 🟠     | https://www.openslr.org/12 |
 | 🟢     | Part of repo. No need to download. |
 
-### Visualizations
+### Demos
 
-There are a few examples scripts to visualize the results:
-
-```bash
-python visualizations/view_raw_embeddings.py
-python visualizations/view_zerosyl_base_boundaries.py
-python visualizations/view_meanpooled_embeddings.py
-python visualizations/view_zerosyl_discrete_tokens.py
-python visualizations/view_boosted_embeddings_25k_steps.py
-```
-
-You can modify the `STEM` constant in these script if you want to plot different examples from LibriSpeech
-
-You can also play around with `ZeroSylBase`'s hyperparamters by modifying the following attributes right after the model was loaded:
-
-```python
-model = ZeroSylBase.from_pretrained_checkpoint(checkpoint_path).cuda()
-model.boundary_layer: int = 11  # on which layer to compute norms
-model.window_size: int = 3  # for norm smoothing
-model.prominence: float = 0.5  # for peak detection
-model.meanpool_layer: Optional[int] = None  # which layer to meanpool
-```
+See `demo-detect-boundaries.ipynb` and `demo-boosting.ipynb`.
 
 ### Formatting
 
-There is a pre-commit hook that runs the `isort` and `black` formatters.
+There is a pre-commit hook that might require running the `isort` and `black` formatters.
 If your commit fails, just stage the new formatted code and commit again.
 
 If you want to format the code yourself, run:
@@ -139,6 +121,8 @@ poery run black .
 ```
 
 ### Poetry releases cheat sheet
+
+Some notes on how to make a new release. Releases are only necessary if we add new checkpoints or data.
 
 1. Commit your changes with a descriptive message
 2. Update the version using Poetry
@@ -156,9 +140,11 @@ poery run black .
     git tag -a v$(poetry version -s) -m "Release v$(poetry version -s)"
     ```
 5. Push the changes and tag to GitHub
+    ```bash
+    git push origin --tags
+    ```
 6. Create the GitHub Release
     - Go to GitHub → your repo → Releases → “Draft a new release”
     - Then select the tag you created
-    - Upload any updated checkpoints + instructions
-
+    - Upload any updated checkpoints + instructionscd 
 
