@@ -84,7 +84,7 @@ class ZeroSylBase(WavLM):
         assert wav.size(0) == 1
         if self.cfg.normalize:
             wav = torch.nn.functional.layer_norm(wav, wav.shape)
-        wav = torch.nn.functional.pad(wav, ((400 - 320 // 2), (400 - 320 // 2)))
+        wav = torch.nn.functional.pad(wav, ((400 - 320) // 2, (400 - 320) // 2))
         return wav
 
     @torch.inference_mode()
@@ -164,7 +164,7 @@ class ZeroSylBase(WavLM):
         """
         boundary_features, _ = self._extract_features(wav)
         peaks = self._promseg_on_norms(boundary_features)
-        peaks_s = (peaks + 0.5) / FEATURE_RATE
+        peaks_s = peaks / FEATURE_RATE
         duration = wav.size(-1) / SAMPLE_RATE
         boundaries_s = [0] + peaks_s.tolist() + [duration]
         return boundaries_s
