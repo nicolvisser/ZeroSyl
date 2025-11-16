@@ -36,7 +36,9 @@ class ZeroSylBase(WavLM):
 
     # ------------------------- core methods -------------------------
 
-    def segment(self, wav: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
+    def segment(
+        self, wav: torch.Tensor
+    ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         """Segment audio into syllable-like units and compute meanpooled embeddings.
 
         This is the core segmentation method that combines boundary detection with
@@ -69,13 +71,13 @@ class ZeroSylBase(WavLM):
     # ------------------------- helper methods -------------------------
 
     def _preprocess_waveform(self, wav: torch.Tensor) -> torch.Tensor:
-        """Preprocess waveform by adding padding for WavLM compatibility.
+        """Preprocess waveform for WavLM compatibility.
 
         Args:
             wav: Input waveform tensor of shape (1, num_samples).
 
         Returns:
-            Padded waveform tensor with 320 samples added to each side.
+            Normalized and padded waveform tensor with 40 samples added to each side.
 
         Raises:
             AssertionError: If wav is not 2D or batch size is not 1.
@@ -93,7 +95,8 @@ class ZeroSylBase(WavLM):
 
         This method efficiently extracts features from both an intermediate layer
         (for boundary detection) and a later layer (for meanpooling) using WavLM's
-        layer output mechanism. This avoids the need for two separate forward passes.
+        layer output mechanism. This avoids the need for two separate forward passes
+        when extracting meanpooling features from the final output (i.e. layer=None)
 
         Args:
             wav: Input waveform tensor of shape (1, num_samples).
@@ -152,7 +155,7 @@ class ZeroSylBase(WavLM):
 
     # ------------------------- convenience methods -------------------------
 
-    def boundaries(self, wav: torch.Tensor) -> List[int]:
+    def boundaries(self, wav: torch.Tensor) -> List[float]:
         """Extract syllable boundary timestamps in seconds.
 
         Args:
@@ -219,7 +222,7 @@ class ZeroSylDiscrete(ZeroSylBase):
             using inner product (equivalent to cosine similarity after normalization).
     """
 
-    def __init__(self, wavlm_cfg: WavLMConfig, centroids: torch.Tensor = None):
+    def __init__(self, wavlm_cfg: WavLMConfig, centroids: torch.Tensor):
         """Initialize ZeroSylDiscrete with WavLM configuration and quantization centroids.
 
         Args:
@@ -248,7 +251,7 @@ class ZeroSylDiscrete(ZeroSylBase):
         Args:
             checkpoint_path: Path to the WavLM model checkpoint file containing
                 configuration and model state dict.
-            centroids_path: Path to the file containing the k-means centroids
+            centroids_path: Path to the .pt file containing the k-means centroids
                 for quantization.
 
         Returns:
@@ -263,7 +266,9 @@ class ZeroSylDiscrete(ZeroSylBase):
         model.eval()
         return model
 
-    def tokenize(self, wav: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
+    def tokenize(
+        self, wav: torch.Tensor
+    ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         """Segment audio and quantize syllable embeddings to discrete tokens.
 
         This method combines syllable segmentation with vector quantization to

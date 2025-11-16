@@ -2,7 +2,7 @@ from pathlib import Path
 
 import tgt
 import torchaudio
-from tqdm.autonotebook import tqdm
+from tqdm import tqdm
 
 from zerosyl.model import ZeroSylBase
 from zerosyl.utils.boundaries import *
@@ -10,20 +10,15 @@ from zerosyl.utils.boundaries import *
 TOLERANCE = 0.05  # 50 ms
 
 checkpoint_path = Path("checkpoints/WavLM-Large.pt")
-waveform_dir = Path.cwd() / "data/waveforms/LibriSpeech"
-alignment_dir = Path.cwd() / "data/alignments/LibriSpeech"
+waveform_dir = Path("data/waveforms/LibriSpeech")
+alignment_dir = Path("data/alignments/LibriSpeech")
 
-assert checkpoint_path.exists()
-assert waveform_dir.exists()
-assert alignment_dir.exists()
+waveform_paths = sorted(waveform_dir.glob("dev*/**/*.flac"))
+alignment_paths = sorted(alignment_dir.glob("dev*/**/*.TextGrid"))
 
-waveform_paths = {p.stem: p for p in waveform_dir.glob("dev*/**/*.flac")}
-alignment_paths = {p.stem: p for p in alignment_dir.glob("dev*/**/*.TextGrid")}
-
-common_stems = sorted(waveform_paths.keys() & alignment_paths.keys())
-waveform_paths = [waveform_paths[s] for s in common_stems]
-alignment_paths = [alignment_paths[s] for s in common_stems]
-assert len(waveform_paths) > 0
+assert len(waveform_paths) == len(alignment_paths) == 5567
+for wp, ap in zip(waveform_paths, alignment_paths):
+    assert wp.stem == ap.stem
 
 model = ZeroSylBase.from_pretrained_checkpoint(checkpoint_path).cuda()
 
