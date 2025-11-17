@@ -37,7 +37,7 @@ def eval_boundaries(
     assert len(seg) == len(ref)
 
     for i_utterance in range(len(seg)):
-        prediction = seg[i_utterance][1:]
+        prediction = seg[i_utterance]
         ground_truth = ref[i_utterance]
 
         if (
@@ -93,7 +93,7 @@ def eval_token_boundaries(
         prediction = seg[i_utterance]
         ground_truth = ref[i_utterance]
 
-        seg_segments = [(a, b) for a, b in itertools.pairwise(prediction)]
+        seg_segments = [(a, b) for a, b in itertools.pairwise([0] + prediction)]
         ref_segments = [(a, b) for a, b in itertools.pairwise([0] + ground_truth)]
 
         ref_intervals = []
