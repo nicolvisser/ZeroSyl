@@ -428,6 +428,42 @@ class WavLM(nn.Module):
             feature = (feature, res["mask_indices"])
         return feature, res["padding_mask"]
 
+    def extract_dual_features(
+        self,
+        source: torch.Tensor,
+        padding_mask: Optional[torch.Tensor] = None,
+        output_layer_1: int = 13,
+        output_layer_2: int = 22,
+    ):
+
+        if self.feature_grad_mult > 0:
+            features = self.feature_extractor(source)
+            if self.feature_grad_mult != 1.0:
+                features = GradMultiply.apply(features, self.feature_grad_mult)
+        else:
+            with torch.no_grad():
+                features = self.feature_extractor(source)
+
+        features = features.transpose(1, 2)
+        features = self.layer_norm(features)
+
+        if padding_mask is not None:
+            padding_mask = self.forward_padding_mask(features, padding_mask)
+
+        if self.post_extract_proj is not None:
+            features = self.post_extract_proj(features)
+
+        features = self.dropout_input(features)
+
+        results1, results2 = self.encoder.extract_dual_features(
+            features,
+            padding_mask=padding_mask,
+            tgt_layer1=output_layer_1 - 1,
+            tgt_layer2=output_layer_2 - 1,
+        )
+
+        return results1, results2
+
 
 class ConvFeatureExtractionModel(nn.Module):
     def __init__(
@@ -669,6 +705,45 @@ class TransformerEncoder(nn.Module):
         x = x.transpose(0, 1)
 
         return x, layer_results
+
+    def extract_dual_features(
+        self, x, padding_mask=None, tgt_layer1: int = 13, tgt_layer2: int = 22
+    ):
+        assert tgt_layer2 > tgt_layer1
+
+        if padding_mask is not None:
+            x[padding_mask] = 0
+
+        x_conv = self.pos_conv(x.transpose(1, 2))
+        x_conv = x_conv.transpose(1, 2)
+        x = x + x_conv
+
+        if not self.layer_norm_first:
+            x = self.layer_norm(x)
+
+        x = F.dropout(x, p=self.dropout, training=self.training)
+
+        # B x T x C -> T x B x C
+        x = x.transpose(0, 1)
+
+        results = []
+        pos_bias = None
+        for i, layer in enumerate(self.layers):
+            dropout_probability = np.random.random()
+            if not self.training or (dropout_probability > self.layerdrop):
+                x, z, pos_bias = layer(
+                    x,
+                    self_attn_padding_mask=padding_mask,
+                    need_weights=False,
+                    self_attn_mask=None,
+                    pos_bias=pos_bias,
+                )
+            if i == tgt_layer1 or i == tgt_layer2:
+                results.append(x.transpose(0, 1))
+            if i == tgt_layer2:
+                break
+
+        return results
 
 
 class TransformerSentenceEncoderLayer(nn.Module):

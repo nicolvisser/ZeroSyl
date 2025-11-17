@@ -32,10 +32,11 @@ class ZeroSylBase(WavLM):
     boundary_layer: int = 13  # to compute norms
     window_size: int = 3  # for norm smoothing
     prominence: float = 0.45  # for peak detection
-    meanpool_layer: Optional[int] = None  # layer to meanpool
+    meanpool_layer: int = 22  # layer to meanpool
 
     # ------------------------- core methods -------------------------
 
+    @torch.inference_mode()
     def segment(
         self, wav: torch.Tensor
     ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
@@ -56,9 +57,19 @@ class ZeroSylBase(WavLM):
                 - ends: Tensor of shape (num_segments,) with frame indices of
                   segment end boundaries.
         """
-        boundary_features, features_to_meanpool = self._extract_features(wav)
+        # extract features
+        wav = self._preprocess_waveform(wav)
+        boundary_features, features_to_meanpool = self.extract_dual_features(
+            wav, output_layer1=self.boundary_layer, output_layer_2=self.meanpool_layer
+        )
+        boundary_features = boundary_features.squeeze(0)
+        features_to_meanpool = features_to_meanpool.squeeze(0)
+
+        # boundary detection
         peaks = self._promseg_on_norms(boundary_features)
         boundaries = [0] + peaks.tolist() + [len(boundary_features)]
+
+        # meanpool within boundaries
         starts = torch.tensor(boundaries[:-1], device=wav.device)
         ends = torch.tensor(boundaries[1:], device=wav.device)
         embeddings = [
@@ -66,6 +77,7 @@ class ZeroSylBase(WavLM):
             for start, end in zip(starts, ends)
         ]
         embeddings = torch.stack(embeddings)
+
         return embeddings, starts, ends
 
     # ------------------------- helper methods -------------------------
@@ -88,44 +100,6 @@ class ZeroSylBase(WavLM):
             wav = torch.nn.functional.layer_norm(wav, wav.shape)
         wav = torch.nn.functional.pad(wav, ((400 - 320) // 2, (400 - 320) // 2))
         return wav
-
-    @torch.inference_mode()
-    def _extract_features(self, wav: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
-        """Extract features from two different layers in a single forward pass.
-
-        This method efficiently extracts features from both an intermediate layer
-        (for boundary detection) and a later layer (for meanpooling) using WavLM's
-        layer output mechanism. This avoids the need for two separate forward passes
-        when extracting meanpooling features from the final output (i.e. layer=None)
-
-        Args:
-            wav: Input waveform tensor of shape (1, num_samples).
-
-        Returns:
-            A tuple containing:
-                - boundary_features: Features from self.boundary_layer with shape
-                  (num_frames, model_dim), used for detecting syllable boundaries.
-                - features_to_meanpool: Features from self.meanpool_layer (or final layer)
-                  with shape (num_frames, model_dim), used for creating embeddings.
-
-        Note:
-            WavLM uses prenorm in transformer layers and applies an additional layer
-            norm after the final transformer layer when layer_norm_first is True.
-            The default WavLM.extract_features method cannot extract from both an
-            intermediate layer and the output after the layer norm at the same time.
-        """
-        wav = self._preprocess_waveform(wav)
-        output_layer = self.meanpool_layer or self.cfg.encoder_layers
-        (x, layer_results), _ = self.extract_features(
-            wav, output_layer=output_layer, ret_layer_results=True
-        )
-        if self.meanpool_layer is None:
-            if self.encoder.layer_norm_first:
-                x = self.encoder.layer_norm(x)
-        boundary_features, _ = layer_results[self.boundary_layer]
-        boundary_features = boundary_features.squeeze(1)
-        features_to_meanpool = x.squeeze(0)
-        return boundary_features, features_to_meanpool
 
     def _promseg_on_norms(self, boundary_features: torch.Tensor) -> np.ndarray:
         """Perform prominence-based segmentation on feature norms.
@@ -155,6 +129,7 @@ class ZeroSylBase(WavLM):
 
     # ------------------------- convenience methods -------------------------
 
+    @torch.inference_mode()
     def boundaries(self, wav: torch.Tensor) -> List[float]:
         """Extract syllable boundary timestamps in seconds.
 
@@ -165,46 +140,15 @@ class ZeroSylBase(WavLM):
             List of boundary timestamps in seconds, including 0.0 at the start
             and the audio duration at the end.
         """
-        boundary_features, _ = self._extract_features(wav)
-        peaks = self._promseg_on_norms(boundary_features)
+        wav = self._preprocess_waveform(wav)
+        boundary_features, _ = self.extract_features(
+            wav, output_layer=self.boundary_layer
+        )
+        peaks = self._promseg_on_norms(boundary_features.squeeze(0))
         peaks_s = peaks / FEATURE_RATE
         duration = wav.size(-1) / SAMPLE_RATE
         boundaries_s = [0] + peaks_s.tolist() + [duration]
         return boundaries_s
-
-    def framewise_meanpooled_embeddings(self, wav: torch.Tensor) -> torch.Tensor:
-        """Extract frame-level embeddings at 50 Hz with segment-wise meanpooling.
-
-        This method produces embeddings at the native WavLM frame rate (50 Hz) where
-        all frames within a detected segment share the same meanpooled embedding vector.
-
-        Args:
-            wav: Input waveform tensor of shape (1, num_samples).
-
-        Returns:
-            Tensor of shape (num_frames, hidden_dim) containing framewise embeddings
-            where each frame is assigned the meanpooled embedding of its segment.
-        """
-        embeddings, starts, ends = self.segment(wav)
-        lengths = ends - starts
-        framewise_embeddings = torch.repeat_interleave(embeddings, lengths, dim=0)
-        return framewise_embeddings
-
-    def framewise_embeddings(self, wav: torch.Tensor) -> torch.Tensor:
-        """Extract raw frame-level embeddings at 50 Hz without segmentation.
-
-        This method extracts features at the native WavLM frame rate without
-        performing boundary detection or meanpooling.
-
-        Args:
-            wav: Input waveform tensor of shape (1, num_samples).
-
-        Returns:
-            Tensor of shape (num_frames, hidden_dim) containing raw framewise
-            embeddings from the specified meanpool_layer (or final layer).
-        """
-        _, features_to_meanpool = self._extract_features(wav)
-        return features_to_meanpool
 
 
 class ZeroSylDiscrete(ZeroSylBase):
