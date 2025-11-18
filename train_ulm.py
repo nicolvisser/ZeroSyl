@@ -25,7 +25,7 @@ class TrainConfig:
     # --- General training control ---
     device: str = "cuda"
     dtype: torch.dtype = torch.bfloat16
-    accumulation_steps: int = 6
+    accumulation_steps: int = 4
     grad_clip_max_norm: float = 1.0
     batch_size: int = 24
     num_workers: int = 0
@@ -277,7 +277,10 @@ class Trainer:
             entity=train_cfg.entity,
             project=train_cfg.project,
             name=train_cfg.name,
-            config=train_cfg.__dict__,
+            config={
+                "model_cfg": model_cfg.__dict__,
+                "train_cfg": train_cfg.__dict__,
+            },
         )
 
         self.current_step = 0

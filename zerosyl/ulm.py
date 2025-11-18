@@ -105,9 +105,9 @@ class ULM(nn.Module):
     @classmethod
     def from_pretrained_checkpoint(cls, checkpoint_path: str) -> "ULM":
         checkpoint = torch.load(checkpoint_path, map_location="cpu")
-        model_args = ULMConfig(**checkpoint["model_args"])
-        model = cls(args=model_args)
-        model.load_state_dict(checkpoint["model_state_dict"], strict=True)
+        cfg = ULMConfig(**checkpoint["cfg"])
+        model = cls(cfg)
+        model.load_state_dict(checkpoint["model"], strict=True)
         model.eval()
         params = sum(p.numel() for p in model.parameters())
         print(f"ULM loaded with {params:,} parameters")

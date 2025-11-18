@@ -8,3 +8,4 @@ script*.py
 poetry.lock
 data/waveforms
 data/alignments
+output
