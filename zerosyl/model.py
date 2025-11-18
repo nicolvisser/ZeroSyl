@@ -1,4 +1,4 @@
-from typing import List, Optional, Tuple
+from typing import List, Tuple
 
 import faiss
 import numpy as np
@@ -60,7 +60,7 @@ class ZeroSylBase(WavLM):
         # extract features
         wav = self._preprocess_waveform(wav)
         boundary_features, features_to_meanpool = self.extract_dual_features(
-            wav, output_layer1=self.boundary_layer, output_layer_2=self.meanpool_layer
+            wav, output_layer_1=self.boundary_layer, output_layer_2=self.meanpool_layer
         )
         boundary_features = boundary_features.squeeze(0)
         features_to_meanpool = features_to_meanpool.squeeze(0)
