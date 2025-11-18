@@ -117,13 +117,13 @@ Precision: 0.6935, Recall: 0.7564, F1: 0.7236, R-value: 0.7519
 Token Precision: 0.5289, Token Recall: 0.5707, Token F1: 0.5490
 ```
 
-Running `eval-clusterin.py` should give:
+Running `eval-clustering.py` should give:
 
 ```
-Syllable purity:                            0.6239
-Cluster purity:                             0.2471
-Syllable-normalized mutual information:     0.8013
-Bitrate (over speech frames):                68.54
+Syllable purity:                            0.6446
+Cluster purity:                             0.2487
+Syllable-normalized mutual information:     0.8091
+Bitrate (over speech frames):                68.66
 ```
 
 ### Formatting
