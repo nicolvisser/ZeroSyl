@@ -454,7 +454,7 @@ class Trainer:
                 loss = self.train_step(batch)
 
                 if self.cfg.accumulation_steps > 1:
-                    loss / self.cfg.accumulation_steps
+                    loss = loss / self.train_cfg.accumulation_steps
 
             if self.scaler is None:
                 loss.backward()

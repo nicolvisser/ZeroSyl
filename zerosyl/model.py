@@ -1,3 +1,4 @@
+from functools import reduce
 from typing import List, Tuple
 
 import faiss
@@ -180,11 +181,15 @@ class ZeroSylDiscrete(ZeroSylBase):
         """
         super().__init__(wavlm_cfg)
         self.centroids = centroids.numpy()
-        self.vocab_size, d = self.centroids.shape
+        vocab_size, d = self.centroids.shape
         assert d == self.cfg.encoder_embed_dim
         faiss.normalize_L2(self.centroids)
         self.index = faiss.IndexFlatIP(d)
         self.index.add(self.centroids)
+
+    @property
+    def vocab_size(self) -> int:
+        return len(self.centroids)
 
     @classmethod
     def from_pretrained_checkpoint(
@@ -237,3 +242,67 @@ class ZeroSylDiscrete(ZeroSylBase):
         _, tokens = self.index.search(embeddings, 1)
         tokens = torch.from_numpy(tokens).squeeze().to(wav.device)
         return tokens, starts, ends
+
+
+class ZeroSylDiscreteCollapsed(ZeroSylDiscrete):
+
+    def __init__(
+        self, wavlm_cfg: WavLMConfig, centroids: torch.Tensor, silences: torch.Tensor
+    ):
+        super().__init__(wavlm_cfg, centroids)
+        assert len(silences) == len(centroids)
+        order = torch.argsort(silences)  # [0,0,....,0,0,1,1,...,1,1]
+        self.SIL = torch.argmax(silences[order].long()).item()  # position of first 1
+        self.mapping = torch.empty_like(order)
+        self.mapping[order] = torch.arange(len(order))
+        self.mapping[self.mapping > self.SIL] = self.SIL
+
+    @property
+    def vocab_size(self) -> int:
+        return self.mapping.max().item() + 1
+
+    @classmethod
+    def from_pretrained_checkpoint(
+        cls, checkpoint_path: str, centroids_path: str, silences_path: str
+    ) -> "ZeroSylDiscreteCollapsed":
+        checkpoint = torch.load(checkpoint_path)
+        centroids = torch.load(centroids_path)
+        silences = torch.load(silences_path)
+        cfg = WavLMConfig(checkpoint["cfg"])
+        model = cls(cfg, centroids, silences)
+        model.load_state_dict(checkpoint["model"])
+        model.eval()
+        return model
+
+    def tokenize(
+        self, wav: torch.Tensor
+    ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+        tokens, starts, ends = super().tokenize(wav)
+
+        if self.mapping.device != tokens.device:
+            # lazily put mapping on the correct device
+            self.mapping = self.mapping.to(tokens.device)
+
+        # remap
+        tokens = self.mapping[tokens]
+
+        data = zip(tokens, starts, ends)
+
+        def merge(left, right):
+            tokens, starts, ends = left
+            tok, start, end = right
+
+            if len(tokens) > 0 and tokens[-1] == tok and tok == self.SIL:
+                # merge
+                ends[-1] = end
+            else:
+                # append
+                tokens += [tok]
+                starts += [start]
+                ends += [end]
+
+            return tokens, starts, ends
+
+        tokens, starts, ends = reduce(merge, data, [[], [], []])
+
+        return torch.tensor(tokens), torch.tensor(starts), torch.tensor(ends)
