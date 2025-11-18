@@ -11,7 +11,7 @@ from tqdm import tqdm
 from zerosyl.model import ZeroSylDiscrete
 
 checkpoint_path = Path("checkpoints/WavLM-Large.pt")
-centroids_path = Path("checkpoints/km10000-centroids-v030.pt")
+centroids_path = Path("checkpoints/km10000-centroids-v040.pt")
 waveform_dir = Path("data/waveforms/LibriSpeech")
 alignment_dir = Path("data/alignments/LibriSpeech")
 

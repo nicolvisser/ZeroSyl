@@ -65,32 +65,32 @@ There is also an nn.Module in `train_boosting_model.py`:
 
 We will upload checkpoints and data as releases on GitHub.
 
-Each release will be linked to a commit with a git tag such as `v0.2.0`. The code at that commit will be in a working condition and any required checkpoints or data will be in the Assets section of the corresponding release.
+Each release will be linked to a commit with a git tag such as `v0.4.0`. The code at that commit will be in a working condition and any required checkpoints or data will be in the Assets section of the corresponding release.
 
-For example you could go to the [releases](https://github.com/nicolvisser/ZeroSyl/releases) page. Then perhaps see that [v0.2.0](https://github.com/nicolvisser/ZeroSyl/tree/v0.2.0) is the latest release. Then checkout the code with:
+For example you could go to the [releases](https://github.com/nicolvisser/ZeroSyl/releases) page. Then perhaps see that [v0.4.0](https://github.com/nicolvisser/ZeroSyl/tree/v0.4.0) is the latest release. Then checkout the code with:
 
 ```
-git checkout v0.2.0
+git checkout v0.4.0
 ```
 You will then look at that README for instructions on how to download the required checkpoints and data from the release page.
 
-#### Instructions for v0.2.0:
+#### Instructions for v0.4.0:
 
 You should have the following structure inside your workspace:
 ```
 .
 ├── checkpoints
 │   ├── 🟣 WavLM-Large.pt
-│   ├── 🔴 km10000-centroids-v020.pt
-|   ├── 🔴 zerosyl-boost-v020-step-5000.pt
-│   └── 🔴 zerosyl-boost-v020-step-15000.pt
+│   ├── 🔴 km10000-centroids-v040.pt
 └── data
     ├── alignments
     │   └── LibriSpeech
-    │       └── 🔴 dev-clean/*
+    │       ├── 🔴 dev-clean/*
+    │       └── 🔴 dev-other/*
     ├── waveforms
     │   └── LibriSpeech
-    │       └── 🟠 dev-clean/*
+    │       ├── 🟠 dev-clean/*
+    │       └── 🟠 dev-other/*
     ├── 🟢 sample.TextGrid
     └── 🟢 sample.flac
 ```
@@ -100,13 +100,31 @@ So go and download the missing thing from the following sources:
 | source | link |
 |--------|------|
 | 🟣     | https://github.com/microsoft/unilm/tree/master/wavlm |
-| 🔴     | https://github.com/nicolvisser/ZeroSyl/releases/tag/v0.2.0 |
+| 🔴     | https://github.com/nicolvisser/ZeroSyl/releases/tag/v0.4.0 |
 | 🟠     | https://www.openslr.org/12 |
 | 🟢     | Part of repo. No need to download. |
 
 ### Demos
 
 See `demo-detect-boundaries.ipynb` and `demo-boosting.ipynb`.
+
+### Evaluations
+
+Running `eval-boundaries.py` should give:
+
+```
+Precision: 0.6935, Recall: 0.7564, F1: 0.7236, R-value: 0.7519
+Token Precision: 0.5289, Token Recall: 0.5707, Token F1: 0.5490
+```
+
+Running `eval-clusterin.py` should give:
+
+```
+Syllable purity:                            0.6239
+Cluster purity:                             0.2471
+Syllable-normalized mutual information:     0.8013
+Bitrate (over speech frames):                68.54
+```
 
 ### Formatting
 
