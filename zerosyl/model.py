@@ -9,6 +9,7 @@ from .wavlm import WavLM, WavLMConfig
 
 SAMPLE_RATE = 16000
 FEATURE_RATE = 50.0
+DOWNSAMPLE_FACTOR = 320
 
 
 class ZeroSylBase(WavLM):
@@ -57,30 +58,70 @@ class ZeroSylBase(WavLM):
                 - ends: Tensor of shape (num_segments,) with frame indices of
                   segment end boundaries.
         """
+        return self.segment_batch([wav])[0]
+
+    @torch.inference_mode()
+    def segment_batch(
+        self, wavs: List[torch.Tensor]
+    ) -> List[Tuple[torch.Tensor, torch.Tensor, torch.Tensor]]:
+        """Segment audio into syllable-like units and compute meanpooled embeddings.
+
+        This is the core segmentation method that combines boundary detection with
+        feature extraction to produce one embedding per detected segment.
+
+        Args:
+            wav: Input waveform tensor of shape (1, num_samples).
+
+        Returns:
+            A tuple containing:
+                - embeddings: Tensor of shape (num_segments, model_dim) containing
+                  one meanpooled embedding per detected segment.
+                - starts: Tensor of shape (num_segments,) with frame indices of
+                  segment start boundaries.
+                - ends: Tensor of shape (num_segments,) with frame indices of
+                  segment end boundaries.
+        """
+        wavs, seqlens, padding_mask = self._pad_and_stack(wavs)
+
         # extract features
-        wav = self._preprocess_waveform(wav)
+        wavs = self._preprocess_waveform(wavs)
         boundary_features, features_to_meanpool = self.extract_dual_features(
-            wav, output_layer1=self.boundary_layer, output_layer_2=self.meanpool_layer
+            wavs,
+            padding_mask,
+            output_layer_1=self.boundary_layer,
+            output_layer_2=self.meanpool_layer,
         )
-        boundary_features = boundary_features.squeeze(0)
-        features_to_meanpool = features_to_meanpool.squeeze(0)
 
         # boundary detection
-        peaks = self._promseg_on_norms(boundary_features)
-        boundaries = [0] + peaks.tolist() + [len(boundary_features)]
+        norms = self._norms(boundary_features)
+        norms = norms.cpu().numpy()
 
-        # meanpool within boundaries
-        starts = torch.tensor(boundaries[:-1], device=wav.device)
-        ends = torch.tensor(boundaries[1:], device=wav.device)
-        embeddings = [
-            features_to_meanpool[start:end].mean(dim=0)
-            for start, end in zip(starts, ends)
-        ]
-        embeddings = torch.stack(embeddings)
+        output = []
+        for n, l, f in zip(norms, seqlens, boundary_features):
+            peaks, _ = find_peaks(n[:l], prominence=self.prominence)
+            boundaries = [0] + peaks.tolist() + [l]
 
-        return embeddings, starts, ends
+            # meanpool within boundaries
+            starts = torch.tensor(boundaries[:-1], device=wavs.device)
+            ends = torch.tensor(boundaries[1:], device=wavs.device)
+            embeddings = [f[start:end].mean(dim=0) for start, end in zip(starts, ends)]
+            embeddings = torch.stack(embeddings)
+            output.append((embeddings, starts, ends))
+
+        return output
 
     # ------------------------- helper methods -------------------------
+    def _pad_and_stack(self, wavs: List[torch.Tensor]):
+        wavs = [
+            wav[0, : wav.size(-1) // DOWNSAMPLE_FACTOR * DOWNSAMPLE_FACTOR]
+            for wav in wavs
+        ]
+        seqlens = [wav.size(-1) // DOWNSAMPLE_FACTOR for wav in wavs]
+        seqlens = torch.tensor(seqlens, device=wavs[0].device)
+        wavs = torch.nn.utils.rnn.pad_sequence(wavs, batch_first=True)
+        indices = torch.arange(seqlens.max(), device=wavs.device)
+        padding_mask = indices.unsqueeze(0) >= seqlens.unsqueeze(1)
+        return wavs, seqlens, padding_mask
 
     def _preprocess_waveform(self, wav: torch.Tensor) -> torch.Tensor:
         """Preprocess waveform for WavLM compatibility.
@@ -95,37 +136,27 @@ class ZeroSylBase(WavLM):
             AssertionError: If wav is not 2D or batch size is not 1.
         """
         assert wav.ndim == 2
-        assert wav.size(0) == 1
+        bsz, seqlen = wav.shape
         if self.cfg.normalize:
-            wav = torch.nn.functional.layer_norm(wav, wav.shape)
+            wav = torch.nn.functional.layer_norm(wav, (seqlen,))
         wav = torch.nn.functional.pad(wav, ((400 - 320) // 2, (400 - 320) // 2))
         return wav
 
-    def _promseg_on_norms(self, boundary_features: torch.Tensor) -> np.ndarray:
-        """Perform prominence-based segmentation on feature norms.
-
-        This method implements the core segmentation algorithm:
-        1. Compute L2 norms of feature vectors across time
-        2. Standardize norms to zero mean and unit variance
-        3. Apply moving average smoothing with edge padding
-        4. Detect peaks using scipy's find_peaks with prominence threshold
-
-        Args:
-            boundary_features: Feature tensor of shape (num_frames, model_dim).
-
-        Returns:
-            Array of frame indices where syllable boundaries are detected, excluding
-            this first and last frame.
-        """
-        boundary_features = boundary_features.cpu().numpy()
-        norms = np.linalg.norm(boundary_features, axis=-1)
-        norms = (norms - norms.mean()) / norms.std()
-        kernel = np.ones(self.window_size) / self.window_size
-        pad_len = self.window_size // 2
-        norms_padded = np.pad(norms, (pad_len, pad_len), mode="edge")
-        norms_smooth = np.convolve(norms_padded, kernel, mode="valid")
-        peaks, _ = find_peaks(norms_smooth, prominence=self.prominence)
-        return peaks
+    def _norms(self, boundary_features: torch.Tensor) -> List[torch.Tensor]:
+        assert boundary_features.ndim == 3  # (bsz, seqlen, model_dim)
+        norms = torch.linalg.vector_norm(boundary_features, dim=-1)
+        norms = (norms - norms.mean(dim=1, keepdim=True)) / norms.std(
+            dim=1, keepdim=True
+        )
+        kernel = (
+            torch.ones(self.window_size, dtype=torch.float32, device=norms.device)
+            / self.window_size
+        )
+        norms_smooth = torch.nn.functional.conv1d(
+            norms.unsqueeze(1), kernel.view(1, 1, -1), padding=3 // 2
+        )
+        norms_smooth = norms_smooth.squeeze(1)  # (bsz, seqlen)
+        return norms_smooth
 
     # ------------------------- convenience methods -------------------------
 
@@ -140,14 +171,32 @@ class ZeroSylBase(WavLM):
             List of boundary timestamps in seconds, including 0.0 at the start
             and the audio duration at the end.
         """
-        wav = self._preprocess_waveform(wav)
+        return self.boundaries_batch([wav])[0]
+
+    @torch.inference_mode()
+    def boundaries_batch(self, wavs: List[torch.Tensor]) -> List[List[float]]:
+        """Extract syllable boundary timestamps in seconds.
+
+        Args:
+            wav: List[torch.Tensor] of input waveform tensors of shape (1, num_samples).
+
+        Returns:
+            List of boundary timestamps in seconds, including 0.0 at the start
+            and the audio duration at the end.
+        """
+        wavs, seqlens, padding_mask = self._pad_and_stack(wavs)
+        wavs = self._preprocess_waveform(wavs)
         boundary_features, _ = self.extract_features(
-            wav, output_layer=self.boundary_layer
-        )
-        peaks = self._promseg_on_norms(boundary_features.squeeze(0))
-        peaks_s = peaks / FEATURE_RATE
-        duration = wav.size(-1) / SAMPLE_RATE
-        boundaries_s = [0] + peaks_s.tolist() + [duration]
+            wavs, padding_mask, output_layer=self.boundary_layer
+        )  # (bsz,seqlen,model_dim)
+        norms = self._norms(boundary_features)
+        norms = norms.cpu().numpy()
+        boundaries_s = []
+        for n, l in zip(norms, seqlens):
+            peaks, _ = find_peaks(n[:l], prominence=self.prominence)
+            peaks_s = peaks / FEATURE_RATE
+            duration = wavs.size(-1) / SAMPLE_RATE
+            boundaries_s.append([0] + peaks_s.tolist() + [duration])
         return boundaries_s
 
 
@@ -231,9 +280,34 @@ class ZeroSylDiscrete(ZeroSylBase):
                 - ends: Tensor of shape (num_segments,) with frame indices of
                     segment end boundaries.
         """
-        embeddings, starts, ends = self.segment(wav)
-        embeddings = embeddings.cpu().numpy()
-        faiss.normalize_L2(embeddings)
-        _, tokens = self.index.search(embeddings, 1)
-        tokens = torch.from_numpy(tokens).squeeze().to(wav.device)
-        return tokens, starts, ends
+        return self.tokenize_batch([wav])[0]
+
+    def tokenize_batch(
+        self, wavs: List[torch.Tensor]
+    ) -> List[Tuple[torch.Tensor, torch.Tensor, torch.Tensor]]:
+        """Segment audio and quantize syllable embeddings to discrete tokens.
+
+        This method combines syllable segmentation with vector quantization to
+        produce discrete token sequences. Each detected syllable segment is mapped
+        to its nearest centroid using cosine similarity.
+
+        Args:
+            wav: Input waveform tensor of shape (1, num_samples).
+
+        Returns:
+            A tuple containing:
+                - tokens: Tensor of shape (num_segments,) containing discrete token
+                    IDs (indices into the centroid vocabulary) for each segment.
+                - starts: Tensor of shape (num_segments,) with frame indices of
+                    segment start boundaries.
+                - ends: Tensor of shape (num_segments,) with frame indices of
+                    segment end boundaries.
+        """
+        outputs = []
+        for embeddings, starts, ends in self.segment_batch(wavs):
+            embeddings = embeddings.cpu().numpy()
+            faiss.normalize_L2(embeddings)
+            _, tokens = self.index.search(embeddings, 1)
+            tokens = torch.from_numpy(tokens).squeeze().to(starts.device)
+            outputs.append((tokens, starts, ends))
+        return outputs
