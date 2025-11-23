@@ -11,15 +11,15 @@ from xformers.ops.fmha.attn_bias import AttentionBias, BlockDiagonalCausalMask
 
 @dataclass
 class ULMConfig:
-    dim: int = 1024
+    vocab_size: int
+    dim: int = 768
     n_layers: int = 12
     head_dim: int = 64
-    hidden_dim: int = 4 * 1024
-    n_heads: int = 16
-    n_kv_heads: int = 16
-    dropout: float = 0.2
+    hidden_dim: int = 3072
+    n_heads: int = 12
+    n_kv_heads: int = 12
+    dropout: float = 0.1
     norm_eps: float = 1e-6
-    vocab_size: int = 10_000
     rope_theta: float = 10_000.0
 
 

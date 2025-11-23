@@ -25,10 +25,10 @@ class TrainConfig:
     # --- General training control ---
     device: str = "cuda"
     dtype: torch.dtype = torch.bfloat16
-    accumulation_steps: int = 4
+    accumulation_steps: int = 5
     grad_clip_max_norm: float = 1.0
-    batch_size: int = 24
-    num_workers: int = 0
+    batch_size: int = 32
+    num_workers: int = 23
 
     # --- Data configuration ---
     train_units_dir: str = (
@@ -44,15 +44,16 @@ class TrainConfig:
     # --- ULM specific configuration ---
     train_ctx_win_size: int = 256
     dedupe: bool = False
+    label_smoothing: float = 0.1
 
     # --- Optimizer / learning rate schedule ---
-    lr_init: float = 1e-7
-    lr_max: float = 5e-4
-    lr_final: float = 1e-5
-    n_linear_steps: int = 1000
-    n_decay_steps: int = 9000
-    betas: tuple[float, float] = (0.9, 0.999)
-    weight_decay: float = 0.01
+    lr_init: float = 0.0
+    lr_max: float = 1e-4
+    lr_final: float = 1e-4
+    n_linear_steps: int = 500
+    n_decay_steps: int = 4500
+    betas: tuple[float, float] = (0.9, 0.98)
+    weight_decay: float = 0.02
     eps: float = 1e-8
 
 
@@ -294,7 +295,9 @@ class Trainer:
         src_tokens = src_tokens.to(self.train_cfg.device)
         tgt_tokens = tgt_tokens.to(self.train_cfg.device)
         logits = self.model.forward(src_tokens, seqlens)
-        loss = torch.nn.functional.cross_entropy(logits, tgt_tokens)
+        loss = torch.nn.functional.cross_entropy(
+            logits, tgt_tokens, label_smoothing=self.train_cfg.label_smoothing
+        )
         return loss
 
     def valid_step(self, batch):
@@ -306,7 +309,7 @@ class Trainer:
         accuracy = (logits.argmax(-1) == tgt_tokens).float().mean()
         return loss, accuracy
 
-    def train_epoch(self) -> Generator[dict, None, None]:
+    def train_epoch(self):
         """Yields step information for one epoch of training"""
         self.model.train()
         self.optimizer.zero_grad()
@@ -353,7 +356,6 @@ class Trainer:
                 yield loss.detach()
                 self.model.train()
 
-        # no extra optimizer step here; last batch handled in-loop via loader_idx condition
         self.current_epoch += 1
 
     @torch.no_grad()
@@ -372,6 +374,8 @@ class Trainer:
 
         if loss >= self.best_loss:
             print("Validation loss did not improve.")
+        else:
+            self.best_loss = loss
 
         # save the wavlm model with step number
         checkpoint_path = Path(self.run.dir) / f"step-{self.current_global_step}.pt"
@@ -440,11 +444,14 @@ class Trainer:
 
 
 if __name__ == "__main__":
-    model_cfg = ULMConfig()
+    model_cfg = ULMConfig(
+        vocab_size=10000,
+        dropout=0.2,
+    )
     train_cfg = TrainConfig()
     trainer = Trainer(model_cfg, train_cfg)
     trainer.train(
-        max_global_step=10_000,
+        max_global_step=10000,
         log_every_n_global_steps=1,
-        validate_every_n_global_steps=1_000,
+        validate_every_n_global_steps=500,
     )
