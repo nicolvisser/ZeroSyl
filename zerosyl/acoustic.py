@@ -10,6 +10,7 @@ from xformers.ops.fmha import memory_efficient_attention
 from xformers.ops.fmha.attn_bias import (
     AttentionBias,
     BlockDiagonalCausalFromBottomRightMask,
+    BlockDiagonalCausalMask
 )
 
 
@@ -29,6 +30,7 @@ class AcousticModelConfig:
     dropout: float = 0.1
     norm_eps: float = 1e-6
     rope_theta: float = 10_000.0
+    force_fp32_attention: bool = True
 
 
 class AcousticModel(nn.Module):
@@ -51,7 +53,7 @@ class AcousticModel(nn.Module):
 
     @property
     def output_vocab_size(self) -> int:
-        return self.cfg.n_acoustic_types + 2  # EOU EOS
+        return self.cfg.n_acoustic_types + 1 + 1  # EOU EOS
 
     @property
     def EOU(self) -> int:
@@ -139,9 +141,9 @@ class AcousticModel(nn.Module):
             [global_advance, BOS.unsqueeze(0), interleaved, EOS.unsqueeze(0)]
         )
 
-        promptlen = len(global_advance) + 1
+        promptlen = len(global_advance)
 
-        return torch.tensor(tokens), promptlen
+        return tokens, promptlen
 
     def decode(self, tokens: torch.Tensor):
         acoustic_tokens = tokens[tokens < self.cfg.n_acoustic_types]
@@ -185,6 +187,7 @@ class AcousticModel(nn.Module):
         att_mask = BlockDiagonalCausalFromBottomRightMask.from_seqlens(
             q_seqlen, kv_seqlen=seqlens
         )
+        #att_mask = BlockDiagonalCausalMask.from_seqlens(seqlens)
 
         freqs_cis = self.freqs_cis[positions].to(device=h.device)
 
@@ -261,7 +264,16 @@ class Attention(nn.Module):
 
         # xformers requires (B=1, S, H, D)
         xq, key, val = xq[None, ...], key[None, ...], val[None, ...]
-        output = memory_efficient_attention(xq, key, val, mask)
+
+        if self.args.force_fp32_attention:
+            with torch.amp.autocast(device_type='cuda', enabled=False):
+                xq_fp32 = xq.float()
+                key_fp32 = key.float()
+                val_fp32 = val.float()
+                output = memory_efficient_attention(xq_fp32, key_fp32, val_fp32, mask)
+                output = output.to(x.dtype)  # Convert back to original dtype
+        else:
+            output = memory_efficient_attention(xq, key, val, mask)
 
         return self.dropout(self.wo(output.view(seqlen_sum, -1)))
 

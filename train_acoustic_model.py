@@ -1,9 +1,8 @@
 import math
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Callable, Generator, List, Tuple
+from typing import Callable, List, Tuple
 
-import numpy as np
 import torch
 import wandb
 from torch import amp, nn, optim
@@ -12,7 +11,7 @@ from torch.optim.optimizer import Optimizer
 from torch.utils.data import DataLoader, Dataset
 from tqdm.autonotebook import tqdm
 
-from zerosyl.acoustic import AcousticModel, AcousticModelConfig
+from zerosyl.acoustic import AcousticModel, AcousticModelConfig, positions_from_sizes
 
 
 @dataclass
@@ -25,27 +24,27 @@ class TrainConfig:
     # --- General training control ---
     device: str = "cuda"
     dtype: torch.dtype = torch.bfloat16
-    accumulation_steps: int = 5
+    accumulation_steps: int = 4
     grad_clip_max_norm: float = 1.0
-    batch_size: int = 32
+    batch_size: int = 12
     num_workers: int = 23
 
     # --- Data configuration ---
     train_segments_dir: str = (
-        "/home/nicolvisser/Data/zerosyl/v0.4.0/segments/LibriSpeech"
+        "output/segments/syllablelm-625-official-ids/LibriSpeech"
     )
-    train_segments_pattern: str = "train*/**/*.pt"
+    train_segments_pattern: str = "train-clean-100/**/*.pt"
     train_acoustic_units_dir: str = (
-        "/home/nicolvisser/Data/wavtokenizer/.../LibriSpeech"
+        "/mnt/wsl/hermione/wavtokenizer/WavTokenizer_small_600_24k_4096/LibriSpeech"
     )
-    train_acoustic_units_pattern: str = "train*/**/*.pt"
+    train_acoustic_units_pattern: str = "train-clean-100/**/*.pt"
 
     valid_segments_dir: str = (
-        "/home/nicolvisser/Data/zerosyl/v0.4.0/ulm-units-10000/LibriSpeech"
+        "output/segments/syllablelm-625-official-ids/LibriSpeech"
     )
     valid_segments_pattern: str = "dev*/**/*.pt"
     valid_acoustic_units_dir: str = (
-        "/home/nicolvisser/Data/wavtokenizer/.../LibriSpeech"
+        "/mnt/wsl/hermione/wavtokenizer/WavTokenizer_small_600_24k_4096/LibriSpeech"
     )
     valid_acoustic_units_pattern: str = "dev*/**/*.pt"
 
@@ -96,7 +95,7 @@ class EncodedDataset(Dataset):
 
 def collate_fn(
     batch: List[Tuple[torch.Tensor, int]],
-) -> Tuple[torch.Tensor, torch.Tensor, List[int]]:
+) -> Tuple[torch.Tensor, torch.Tensor, List[int], List[int]]:
     tokens, promptlens = zip(*batch)
     src_tokens = [toks[:-1] for toks in tokens]
     tgt_tokens = [toks[1:] for toks in tokens]
@@ -242,7 +241,8 @@ class Trainer:
         src_tokens = src_tokens.to(self.train_cfg.device)
         tgt_tokens = tgt_tokens.to(self.train_cfg.device)
         logits = self.model.forward(src_tokens, promptlens, seqlens)
-        loss = torch.nn.functional.cross_entropy(logits, tgt_tokens)
+        loss_mask = tgt_tokens < self.model.output_vocab_size
+        loss = torch.nn.functional.cross_entropy(logits[loss_mask], tgt_tokens[loss_mask])
         return loss
 
     def valid_step(self, batch):
@@ -250,8 +250,9 @@ class Trainer:
         src_tokens = src_tokens.to(self.train_cfg.device)
         tgt_tokens = tgt_tokens.to(self.train_cfg.device)
         logits = self.model.forward(src_tokens, promptlens, seqlens)
-        loss = torch.nn.functional.cross_entropy(logits, tgt_tokens)
-        accuracy = (logits.argmax(-1) == tgt_tokens).float().mean()
+        loss_mask = tgt_tokens < self.model.output_vocab_size
+        loss = torch.nn.functional.cross_entropy(logits[loss_mask], tgt_tokens[loss_mask])
+        accuracy = (logits[loss_mask].argmax(-1) == tgt_tokens[loss_mask]).float().mean()
         return loss, accuracy
 
     def train_epoch(self):
@@ -390,7 +391,7 @@ class Trainer:
 
 if __name__ == "__main__":
     model_cfg = AcousticModelConfig(
-        n_semantic_types=9116,
+        n_semantic_types=8192,
         n_acoustic_types=4096,
         acoustic_freq=40.0,  # Hz
         local_advance=0.1,  # seconds
