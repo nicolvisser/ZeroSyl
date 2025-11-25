@@ -10,7 +10,6 @@ from xformers.ops.fmha import memory_efficient_attention
 from xformers.ops.fmha.attn_bias import (
     AttentionBias,
     BlockDiagonalCausalFromBottomRightMask,
-    BlockDiagonalCausalMask
 )
 
 
@@ -20,7 +19,7 @@ class AcousticModelConfig:
     n_acoustic_types: int
     semantic_freq: float = 50.0  # Hz
     acoustic_freq: float = 40.0  # Hz
-    local_advance: float = 0.05  # seconds
+    acoustic_lag: float = 0.05  # seconds
     dim: int = 768
     n_layers: int = 12
     head_dim: int = 64
@@ -48,28 +47,32 @@ class AcousticModel(nn.Module):
     @property
     def input_vocab_size(self) -> int:
         return (
-            self.cfg.n_acoustic_types + 1 + 1 + 1 + self.cfg.n_semantic_types
-        )  # EOU EOS BOS
+            self.cfg.n_acoustic_types + 4 + self.cfg.n_semantic_types
+        )  # LAG EOU EOS BOS
 
     @property
     def output_vocab_size(self) -> int:
-        return self.cfg.n_acoustic_types + 1 + 1  # EOU EOS
+        return self.cfg.n_acoustic_types + 3  # LAG EOU EOS
 
     @property
-    def EOU(self) -> int:
+    def LAG(self) -> int:
         return self.cfg.n_acoustic_types
 
     @property
-    def EOS(self) -> int:
+    def EOU(self) -> int:
         return self.cfg.n_acoustic_types + 1
 
     @property
-    def BOS(self) -> int:
+    def EOS(self) -> int:
         return self.cfg.n_acoustic_types + 2
 
     @property
-    def semantic_offset(self) -> int:
+    def BOS(self) -> int:
         return self.cfg.n_acoustic_types + 3
+
+    @property
+    def semantic_offset(self) -> int:
+        return self.cfg.n_acoustic_types + 4
 
     def tokenize_infer(self, semantic_units: torch.Tensor):
         tokens = torch.cat(
@@ -102,6 +105,7 @@ class AcousticModel(nn.Module):
         device = segments.device
         assert dtype == torch.long
 
+        LAG = torch.tensor(self.LAG, dtype=dtype, device=device)
         EOU = torch.tensor(self.EOU, dtype=dtype, device=device)
         EOS = torch.tensor(self.EOS, dtype=dtype, device=device)
         BOS = torch.tensor(self.BOS, dtype=dtype, device=device)
@@ -112,7 +116,7 @@ class AcousticModel(nn.Module):
 
         semantic_data = (
             (
-                seg[0] / self.cfg.semantic_freq - self.cfg.local_advance,
+                seg[0] / self.cfg.semantic_freq,
                 seg[2] + self.semantic_offset,
                 1,
             )  # (timestamp, token, priority)
@@ -120,12 +124,30 @@ class AcousticModel(nn.Module):
         )
         EOU_data = (
             (
-                seg[1] / self.cfg.semantic_freq - self.cfg.local_advance,
+                seg[1] / self.cfg.semantic_freq,
                 EOU,
                 0,
             )  # (timestamp, token, priority)
             for seg in segments
         )
+
+        # Add a lag to the acoustic data.
+        # By allowing a lag from the input to output it gives the model a chance
+        # to "peek" into the future before making predictions about the acoustics.
+        # This is similar to the 'local advance' strategy of ELLA-V
+        # but with an explicit [LAG] token that the model must predict.
+        assert (
+            self.cfg.acoustic_lag * self.cfg.acoustic_freq % 1 == 0
+        ), "you should use a lag that is a multiple of 1/acoustic_freq"
+        acoustic_units = torch.cat(
+            [
+                torch.repeat_interleave(
+                    LAG, int(self.cfg.acoustic_lag * self.cfg.acoustic_freq)
+                ),
+                acoustic_units,
+            ]
+        )
+
         acoustic_data = (
             (i / self.cfg.acoustic_freq, unit, 2)  # (timestamp, token, priority)
             for i, unit in enumerate(acoustic_units)
@@ -154,6 +176,8 @@ class AcousticModel(nn.Module):
         for token in tokens.tolist():
             if token < self.EOU:
                 str_values.append(f"a{token}")
+            elif token == self.LAG:
+                str_values.append("[LAG]")
             elif token == self.EOU:
                 str_values.append("[EOU]")
             elif token == self.EOS:
@@ -187,7 +211,7 @@ class AcousticModel(nn.Module):
         att_mask = BlockDiagonalCausalFromBottomRightMask.from_seqlens(
             q_seqlen, kv_seqlen=seqlens
         )
-        #att_mask = BlockDiagonalCausalMask.from_seqlens(seqlens)
+        # att_mask = BlockDiagonalCausalMask.from_seqlens(seqlens)
 
         freqs_cis = self.freqs_cis[positions].to(device=h.device)
 
@@ -266,7 +290,7 @@ class Attention(nn.Module):
         xq, key, val = xq[None, ...], key[None, ...], val[None, ...]
 
         if self.args.force_fp32_attention:
-            with torch.amp.autocast(device_type='cuda', enabled=False):
+            with torch.amp.autocast(device_type="cuda", enabled=False):
                 xq_fp32 = xq.float()
                 key_fp32 = key.float()
                 val_fp32 = val.float()

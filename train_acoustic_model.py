@@ -394,7 +394,7 @@ if __name__ == "__main__":
         n_semantic_types=8192,
         n_acoustic_types=4096,
         acoustic_freq=40.0,  # Hz
-        local_advance=0.1,  # seconds
+        acoustic_lag=0.1,  # seconds
     )
     train_cfg = TrainConfig()
     trainer = Trainer(model_cfg, train_cfg)
