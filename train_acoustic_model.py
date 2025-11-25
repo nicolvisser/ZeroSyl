@@ -49,11 +49,11 @@ class TrainConfig:
     valid_acoustic_units_pattern: str = "dev*/**/*.pt"
 
     # --- Optimizer / learning rate schedule ---
-    lr_init: float = 1e-8
+    lr_init: float = 5e-4
     lr_max: float = 5e-4
-    lr_final: float = 5e-5
-    n_linear_steps: int = 1_000
-    n_decay_steps: int = 9_000
+    lr_final: float = 5e-4
+    n_linear_steps: int = 100
+    n_decay_steps: int = 900
     betas: tuple[float, float] = (0.9, 0.98)
     weight_decay: float = 0.01
     eps: float = 1e-8
@@ -89,21 +89,20 @@ class EncodedDataset(Dataset):
         acoustic_units_path = self.acoustic_units_paths[idx]
         segments = torch.load(segments_path).long()
         acoustic_units = torch.load(acoustic_units_path).long()
-        tokens, promptlen = self.tokenize_fn(segments, acoustic_units)
-        return tokens, promptlen
+        tokens = self.tokenize_fn(segments, acoustic_units)
+        return tokens
 
 
 def collate_fn(
-    batch: List[Tuple[torch.Tensor, int]],
-) -> Tuple[torch.Tensor, torch.Tensor, List[int], List[int]]:
-    tokens, promptlens = zip(*batch)
+    tokens: List[Tuple[torch.Tensor, int]],
+) -> Tuple[torch.Tensor, torch.Tensor, List[int]]:
     src_tokens = [toks[:-1] for toks in tokens]
     tgt_tokens = [toks[1:] for toks in tokens]
     seqlens = [len(toks) for toks in src_tokens]
     src_tokens = torch.cat(src_tokens, dim=0)
     tgt_tokens = torch.cat(tgt_tokens, dim=0)
     assert sum(seqlens) == src_tokens.size(0)
-    return src_tokens, tgt_tokens, promptlens, seqlens
+    return src_tokens, tgt_tokens, seqlens
 
 
 class LinearRampCosineDecayScheduler(LRScheduler):
@@ -237,19 +236,19 @@ class Trainer:
         self.pbar = None
 
     def train_step(self, batch):
-        src_tokens, tgt_tokens, promptlens, seqlens = batch
+        src_tokens, tgt_tokens, seqlens = batch
         src_tokens = src_tokens.to(self.train_cfg.device)
         tgt_tokens = tgt_tokens.to(self.train_cfg.device)
-        logits = self.model.forward(src_tokens, promptlens, seqlens)
+        logits = self.model.forward(src_tokens, seqlens)
         loss_mask = tgt_tokens < self.model.output_vocab_size
         loss = torch.nn.functional.cross_entropy(logits[loss_mask], tgt_tokens[loss_mask])
         return loss
 
     def valid_step(self, batch):
-        src_tokens, tgt_tokens, promptlens, seqlens = batch
+        src_tokens, tgt_tokens, seqlens = batch
         src_tokens = src_tokens.to(self.train_cfg.device)
         tgt_tokens = tgt_tokens.to(self.train_cfg.device)
-        logits = self.model.forward(src_tokens, promptlens, seqlens)
+        logits = self.model.forward(src_tokens, seqlens)
         loss_mask = tgt_tokens < self.model.output_vocab_size
         loss = torch.nn.functional.cross_entropy(logits[loss_mask], tgt_tokens[loss_mask])
         accuracy = (logits[loss_mask].argmax(-1) == tgt_tokens[loss_mask]).float().mean()
@@ -394,12 +393,12 @@ if __name__ == "__main__":
         n_semantic_types=8192,
         n_acoustic_types=4096,
         acoustic_freq=40.0,  # Hz
-        acoustic_lag=0.1,  # seconds
+        acoustic_lag=0.2,  # seconds
     )
     train_cfg = TrainConfig()
     trainer = Trainer(model_cfg, train_cfg)
     trainer.train(
-        max_global_step=10_000,
+        max_global_step=1000,
         log_every_n_global_steps=1,
-        validate_every_n_global_steps=1_000,
+        validate_every_n_global_steps=100,
     )

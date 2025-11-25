@@ -9,7 +9,7 @@ import torch.nn as nn
 from xformers.ops.fmha import memory_efficient_attention
 from xformers.ops.fmha.attn_bias import (
     AttentionBias,
-    BlockDiagonalCausalFromBottomRightMask,
+    BlockDiagonalCausalMask
 )
 
 
@@ -29,7 +29,7 @@ class AcousticModelConfig:
     dropout: float = 0.1
     norm_eps: float = 1e-6
     rope_theta: float = 10_000.0
-    force_fp32_attention: bool = True
+    force_fp32_attention: bool = False
 
 
 class AcousticModel(nn.Module):
@@ -163,9 +163,7 @@ class AcousticModel(nn.Module):
             [global_advance, BOS.unsqueeze(0), interleaved, EOS.unsqueeze(0)]
         )
 
-        promptlen = len(global_advance)
-
-        return tokens, promptlen
+        return tokens
 
     def decode(self, tokens: torch.Tensor):
         acoustic_tokens = tokens[tokens < self.cfg.n_acoustic_types]
@@ -201,19 +199,14 @@ class AcousticModel(nn.Module):
         return self._freqs_cis
 
     def forward(
-        self, input_ids: torch.Tensor, promptlens: List[int], seqlens: List[int]
+        self, input_ids: torch.Tensor, seqlens: List[int]
     ) -> torch.Tensor:
         assert sum(seqlens) == input_ids.shape[0]
 
         h = self.tok_embeddings(input_ids)
         positions = positions_from_sizes(seqlens, self.freqs_cis.device)
-        q_seqlen = [sl - pl for pl, sl in zip(promptlens, seqlens)]
-        att_mask = BlockDiagonalCausalFromBottomRightMask.from_seqlens(
-            q_seqlen, kv_seqlen=seqlens
-        )
-        # att_mask = BlockDiagonalCausalMask.from_seqlens(seqlens)
-
         freqs_cis = self.freqs_cis[positions].to(device=h.device)
+        att_mask = BlockDiagonalCausalMask.from_seqlens(seqlens)
 
         for layer in self.layers:
             h = layer(h, freqs_cis, att_mask)
