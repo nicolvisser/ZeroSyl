@@ -31,16 +31,16 @@ class TrainConfig:
 
     # --- Data configuration ---
     train_segments_dir: str = (
-        "output/segments/syllablelm-625-official-ids/LibriSpeech"
+        "/mnt/wsl/hermione/zerosyl/output/v0.4.0/segments/LibriSpeech"
     )
-    train_segments_pattern: str = "train-clean-100/**/*.pt"
+    train_segments_pattern: str = "train*/**/*.pt"
     train_acoustic_units_dir: str = (
         "/mnt/wsl/hermione/wavtokenizer/WavTokenizer_small_600_24k_4096/LibriSpeech"
     )
-    train_acoustic_units_pattern: str = "train-clean-100/**/*.pt"
+    train_acoustic_units_pattern: str = "train*/**/*.pt"
 
     valid_segments_dir: str = (
-        "output/segments/syllablelm-625-official-ids/LibriSpeech"
+        "/mnt/wsl/hermione/zerosyl/output/v0.4.0/segments/LibriSpeech"
     )
     valid_segments_pattern: str = "dev*/**/*.pt"
     valid_acoustic_units_dir: str = (
@@ -49,11 +49,11 @@ class TrainConfig:
     valid_acoustic_units_pattern: str = "dev*/**/*.pt"
 
     # --- Optimizer / learning rate schedule ---
-    lr_init: float = 5e-4
+    lr_init: float = 1e-7
     lr_max: float = 5e-4
-    lr_final: float = 5e-4
-    n_linear_steps: int = 100
-    n_decay_steps: int = 900
+    lr_final: float = 5e-5
+    n_linear_steps: int = 1600
+    n_decay_steps: int = 20000-1600
     betas: tuple[float, float] = (0.9, 0.98)
     weight_decay: float = 0.01
     eps: float = 1e-8
@@ -398,7 +398,7 @@ if __name__ == "__main__":
     train_cfg = TrainConfig()
     trainer = Trainer(model_cfg, train_cfg)
     trainer.train(
-        max_global_step=1000,
+        max_global_step=20000,
         log_every_n_global_steps=1,
-        validate_every_n_global_steps=100,
+        validate_every_n_global_steps=1000,
     )
