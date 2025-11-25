@@ -19,7 +19,7 @@ class TrainConfig:
     # --- Wandb details ---
     entity: str = "zerospeech"
     project: str = "zerosyl-acoustic-model"
-    name: str = "v0.4.0"
+    name: str = "v0.4.0-with-silences-k-10000"
 
     # --- General training control ---
     device: str = "cuda"
@@ -31,7 +31,7 @@ class TrainConfig:
 
     # --- Data configuration ---
     train_segments_dir: str = (
-        "/mnt/wsl/hermione/zerosyl/output/v0.4.0/segments/LibriSpeech"
+        "/mnt/wsl/hermione/zerosyl/output/segments/v0.4.0/with-silences-k-10000/LibriSpeech"
     )
     train_segments_pattern: str = "train*/**/*.pt"
     train_acoustic_units_dir: str = (
@@ -40,7 +40,7 @@ class TrainConfig:
     train_acoustic_units_pattern: str = "train*/**/*.pt"
 
     valid_segments_dir: str = (
-        "/mnt/wsl/hermione/zerosyl/output/v0.4.0/segments/LibriSpeech"
+        "/mnt/wsl/hermione/zerosyl/output/segments/v0.4.0/with-silences-k-10000/LibriSpeech"
     )
     valid_segments_pattern: str = "dev*/**/*.pt"
     valid_acoustic_units_dir: str = (
@@ -390,7 +390,7 @@ class Trainer:
 
 if __name__ == "__main__":
     model_cfg = AcousticModelConfig(
-        n_semantic_types=8192,
+        n_semantic_types=10000,
         n_acoustic_types=4096,
         acoustic_freq=40.0,  # Hz
         acoustic_lag=0.2,  # seconds
