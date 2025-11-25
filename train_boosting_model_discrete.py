@@ -462,6 +462,8 @@ class Trainer:
                 self.scaler.scale(loss).backward()
             self.current_step += 1
 
+            loss = loss * self.train_cfg.accumulation_steps
+
             if (
                 self.current_step + 1
             ) % self.cfg.accumulation_steps == 0 or loader_idx + 1 == len(
