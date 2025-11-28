@@ -281,6 +281,8 @@ class Trainer:
             else:
                 self.scaler.scale(loss).backward()
 
+            loss = loss * self.train_cfg.accumulation_steps
+
             self.current_step += 1
 
             # Step optimizer when we've accumulated enough gradients or at epoch end

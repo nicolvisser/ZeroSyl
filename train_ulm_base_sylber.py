@@ -20,7 +20,7 @@ class TrainConfig:
     # --- Wandb details ---
     entity: str = "zerospeech"
     project: str = "zerosyl-ulm"
-    name: str = "ULM-Base-ZeroSylDiscrete-v040-k-10000"
+    name: str = "ULM-Base-Sylber-k-10001"
 
     # --- General training control ---
     device: str = "cuda"
@@ -32,12 +32,12 @@ class TrainConfig:
 
     # --- Data configuration ---
     train_segments_dir: str = (
-        "/home/nicolvisser/Workspace/zerosyl/output/segments/ZeroSylDiscrete-v040-k-10000/LibriSpeech"
+        "/home/nicolvisser/Workspace/zerosyl/output/segments/Sylber-k-10001/LibriSpeech"
     )
     train_segments_pattern: str = "train*/**/*.pt"
 
     valid_segments_dir: str = (
-        "/home/nicolvisser/Workspace/zerosyl/output/segments/ZeroSylDiscrete-v040-k-10000/LibriSpeech"
+        "/home/nicolvisser/Workspace/zerosyl/output/segments/Sylber-k-10001/LibriSpeech"
     )
     valid_segments_pattern: str = "dev*/**/*.pt"
 
@@ -444,7 +444,7 @@ class Trainer:
 
 if __name__ == "__main__":
     model_cfg = ULMConfig(
-        vocab_size=10000,
+        vocab_size=10001,
         dropout=0.2,
     )
     train_cfg = TrainConfig()
