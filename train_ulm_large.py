@@ -401,6 +401,15 @@ class Trainer:
 
                 if self.current_global_step >= max_global_step:
                     print(f"Reached max steps ({max_global_step})")
+                    checkpoint_path = (
+                        Path(self.run.dir) / f"step-{self.current_global_step}.pt"
+                    )
+                    checkpoint = {
+                        "model": self.model.state_dict(),
+                        "cfg": self.model.cfg.__dict__,
+                    }
+                    Path(checkpoint_path).parent.mkdir(parents=True, exist_ok=True)
+                    torch.save(checkpoint, checkpoint_path)
                     self.pbar.close()
                     return
 
