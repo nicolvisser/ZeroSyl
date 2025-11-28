@@ -27,7 +27,7 @@ class TrainConfig:
     dtype: torch.dtype = torch.bfloat16
     accumulation_steps: int = 1
     grad_clip_max_norm: float = 1.0
-    batch_size: int = 2  #
+    batch_size: int = 40  #
     num_workers: int = 23
 
     # --- Data configuration ---
@@ -48,7 +48,7 @@ class TrainConfig:
     # --- Optimizer / learning rate schedule ---
     lr_init: float = 0.0
     lr_max: float = 4e-4
-    lr_final: float = 5e-4
+    lr_final: float = 4e-5
     n_linear_steps: int = 16_000
     n_decay_steps: int = 200_000 - 16_000
     betas: tuple[float, float] = (0.9, 0.98)

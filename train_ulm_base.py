@@ -51,7 +51,7 @@ class TrainConfig:
     lr_max: float = 4e-4
     lr_final: float = 4e-5
     n_linear_steps: int = 800
-    n_decay_steps: int = 10_000
+    n_decay_steps: int = 10_000 - 800
     betas: tuple[float, float] = (0.9, 0.98)
     weight_decay: float = 0.02
     eps: float = 1e-8
