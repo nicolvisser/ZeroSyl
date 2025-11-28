@@ -4,7 +4,7 @@ import tgt
 import torchaudio
 from tqdm import tqdm
 
-from zerosyl.model import ZeroSylBase
+from zerosyl.encoder import ZeroSylContinuous
 from zerosyl.utils.boundaries import *
 
 TOLERANCE = 0.05  # 50 ms
@@ -43,7 +43,7 @@ assert len(waveform_paths) == len(alignment_paths) == 5567
 for wp, ap in zip(waveform_paths, alignment_paths):
     assert wp.stem == ap.stem
 
-model = ZeroSylBase.from_pretrained_checkpoint(checkpoint_path).cuda()
+model = ZeroSylContinuous.from_pretrained_checkpoint(checkpoint_path).cuda()
 
 segs, refs = [], []
 for waveform_path, alignment_path in zip(tqdm(waveform_paths), alignment_paths):

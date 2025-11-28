@@ -6,7 +6,7 @@ from torchcodec.decoders import AudioDecoder
 from torchcodec.encoders import AudioEncoder
 
 from zerosyl.acoustic import AcousticModel
-from zerosyl.model import ZeroSylDiscrete
+from zerosyl.encoder import ZeroSylDiscrete
 from zerosyl.wavtokenizer.pretrained import load_wavtokenizer_small_600_24k_4096
 
 

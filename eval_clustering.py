@@ -38,8 +38,11 @@ assert len(textgrid_paths) > 0
 assert len(textgrid_paths) == 5567
 
 for system in systems:
-
     segments_dir = Path(system["segments_dir"])
+    if not segments_dir.exists():
+        print(f"{segments_dir} not found.")
+        continue
+
     segments_paths = sorted(segments_dir.glob("dev*/**/*.pt"))
     assert len(segments_paths) > 0
     assert len(segments_paths) == 5567
@@ -56,23 +59,29 @@ for system in systems:
         tier = textgrid.get_tier_by_name("syllables")
 
         for segment in segments:
-            start_time = segment[0] / 50
-            end_time = segment[1] / 50
-            id = segment[2]
+            s_start = segment[0] / 50
+            s_end = segment[1] / 50
+            intervals = tier.get_annotations_between_timepoints(
+                start=s_start, end=s_end, left_overlap=True, right_overlap=True
+            )
 
-            timestamps = np.arange(start_time + 0.5 / 50, end_time, 1 / 50)
-            intervals_framewise = [
-                tier.get_annotations_by_time(t)[0] for t in timestamps
-            ]
+            max_overlap_duration = -1
+            max_overlap_label = None
+            for i in intervals:
+                i_start = max(i.start_time, s_start)
+                i_end = min(i.end_time, s_end)
+                if i_end - i_start > max_overlap_duration:
+                    max_overlap_duration = i_end - i_start
+                    max_overlap_label = i.text
 
-            labels_pred_ = np.repeat(id, len(timestamps))
-            labels_true_ = np.array([i.text for i in intervals_framewise])
+            label_pred = segment[2].item()
+            label_true = max_overlap_label
 
-            labels_pred.append(labels_pred_)
-            labels_true.append(labels_true_)
+            labels_pred.append(label_pred)
+            labels_true.append(label_true)
 
-    labels_pred = np.concat(labels_pred, axis=0)
-    labels_true = np.concat(labels_true, axis=0)
+    labels_pred = np.array(labels_pred)
+    labels_true = np.array(labels_true)
 
     joint_counts = contingency_matrix(labels_true, labels_pred)
 
@@ -106,7 +115,7 @@ for system in systems:
     )
 
     print(system["name"])
-    print(f"Syllable purity:                        {sp.item():>10.4f}")
-    print(f"Cluster purity:                         {cp.item():>10.4f}")
-    print(f"Syllable-normalized mutual information: {snmi.item():>10.4f}")
+    print(f"Syllable purity:                        {sp.item()*100:>10.1f}")
+    print(f"Cluster purity:                         {cp.item()*100:>10.1f}")
+    print(f"Syllable-normalized mutual information: {snmi.item()*100:>10.1f}")
     print()

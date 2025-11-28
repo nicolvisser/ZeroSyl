@@ -39,7 +39,7 @@ class ULM(nn.Module):
     def BOS(self) -> int:
         return self.cfg.vocab_size
 
-    def tokenize(self, units: torch.Tensor):
+    def tokenize(self, units: torch.Tensor) -> torch.Tensor:
         tokens = torch.cat(
             [
                 torch.tensor([self.BOS], dtype=torch.long, device=units.device),
@@ -49,7 +49,7 @@ class ULM(nn.Module):
         return tokens
 
     @property
-    def freqs_cis(self):
+    def freqs_cis(self) -> torch.Tensor:
         # lazy init
         if self._freqs_cis is None:
             self._freqs_cis = precompute_freqs_cis(
@@ -194,10 +194,10 @@ class RMSNorm(torch.nn.Module):
         self.eps = eps
         self.weight = nn.Parameter(torch.ones(dim))
 
-    def _norm(self, x):
+    def _norm(self, x) -> torch.Tensor:
         return x * torch.rsqrt(x.pow(2).mean(-1, keepdim=True) + self.eps)
 
-    def forward(self, x):
+    def forward(self, x) -> torch.Tensor:
         output = self._norm(x.float()).type_as(x)
         return output * self.weight
 
@@ -226,13 +226,15 @@ def apply_rotary_emb(
     return xq_out.type_as(xq), xk_out.type_as(xk)
 
 
-def repeat_kv(keys: torch.Tensor, values: torch.Tensor, repeats: int, dim: int):
+def repeat_kv(
+    keys: torch.Tensor, values: torch.Tensor, repeats: int, dim: int
+) -> Tuple[torch.Tensor, torch.Tensor]:
     keys = torch.repeat_interleave(keys, repeats=repeats, dim=dim)
     values = torch.repeat_interleave(values, repeats=repeats, dim=dim)
     return keys, values
 
 
-def positions_from_sizes(sizes: Iterable[int], device):
+def positions_from_sizes(sizes: Iterable[int], device) -> torch.Tensor:
     return torch.tensor(
         reduce(operator.iadd, [list(range(s)) for s in sizes], []),
         dtype=torch.long,

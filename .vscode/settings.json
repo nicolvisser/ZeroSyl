@@ -1,0 +1,26 @@
+{
+    // Prevent Pylance from indexing huge folders
+    "python.analysis.exclude": [
+        "output",
+        "output/**",
+        "checkpoints",
+        "checkpoints/**",
+        "wandb",
+        "wandb/**",
+        "temp",
+        "temp/**",
+        "data",
+        "data/**",
+    ],
+    "python.analysis.indexing": true,
+    "python.analysis.logLevel": "Error",
+
+    // Optional but recommended: avoid watching output folder at all
+    "files.watcherExclude": {
+        "**/output": true,
+        "**/output/**": true
+    },
+    "files.exclude": {
+        "**/output": true
+    }
+}

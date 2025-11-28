@@ -37,8 +37,11 @@ assert len(textgrid_paths) > 0
 assert len(textgrid_paths) == 5567
 
 for system in systems:
-
     segments_dir = Path(system["segments_dir"])
+    if not segments_dir.exists():
+        print(f"{segments_dir} not found.")
+        continue
+
     segments_paths = sorted(segments_dir.glob("dev*/**/*.pt"))
     assert len(segments_paths) > 0
     assert len(segments_paths) == 5567
