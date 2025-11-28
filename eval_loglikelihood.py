@@ -10,21 +10,19 @@ from zerosyl.ulm import ULM
 
 
 class EncodedEvalDataset(Dataset):
-    def __init__(self, data_dir: str, tokenize_fn: Callable, dedupe: bool = False):
-        self.units_paths = sorted(list(Path(data_dir).glob("*.pt")))
+    def __init__(self, segments_dir: str, tokenize_fn: Callable):
+        self.segments_paths = sorted(list(Path(segments_dir).glob("*.pt")))
         self.tokenize_fn = tokenize_fn
-        self.dedupe = dedupe
 
     def __len__(self):
-        return len(self.units_paths)
+        return len(self.segments_paths)
 
     def __getitem__(self, idx: int):
-        units_path = self.units_paths[idx]
-        key = units_path.stem
-        units = torch.load(units_path).long()
+        segments_path = self.segments_paths[idx]
+        key = segments_path.stem
+        segments = torch.load(segments_path).long()
+        _, _, units = segments.T
         tokens = self.tokenize_fn(units)
-        if self.dedupe:
-            tokens = torch.unique_consecutive(tokens)
         src_tokens = tokens[:-1].clone()
         tgt_tokens = tokens[1:].clone()
         return key, src_tokens, tgt_tokens
@@ -41,23 +39,20 @@ def collate_fn(
 
 
 def compute_loglikelihoods(
-    units_dir: str,
+    segments_dir: str,
     checkpoint_path: str,
     output_path: str,
     batch_size: int,
     num_workers: int,
-    dedupe: bool = True,
 ):
     model = ULM.from_pretrained_checkpoint(checkpoint_path).cuda()
     model.eval()
 
-    print(f"Computing loglikelihoods for units in {units_dir}...")
-    print(f"Dedupe? {dedupe}")
+    print(f"Computing loglikelihoods for units in {segments_dir}...")
 
     dataset = EncodedEvalDataset(
-        data_dir=units_dir,
+        segments_dir=segments_dir,
         tokenize_fn=model.tokenize,
-        dedupe=dedupe,
     )
 
     print(f"Found {len(dataset)} unit files")
@@ -92,24 +87,22 @@ def compute_loglikelihoods(
 
 if __name__ == "__main__":
     # activate zrc environment and run:
-    # zrc submission:init sLM21 output/submissions/ulm-v0.4.0-units-10000/
+    # zrc submission:init sLM21 output/submissions/...
 
     compute_loglikelihoods(
-        units_dir="/home/nicolvisser/Data/zerosyl/v0.4.0/ulm-units-10000/sLM21-dataset/lexical/dev",
-        checkpoint_path="/home/nicolvisser/Workspace/zerosyl/wandb/run-20251118_202437-2hhkxoxk/files/step-3000.pt",
-        output_path="output/submissions/ulm-v0.4.0-units-10000/lexical/dev.txt",
+        segments_dir="/home/nicolvisser/Workspace/zerosyl/output/segments/ZeroSylDiscrete-v040-k-10000/sLM21-dataset/lexical/dev",
+        checkpoint_path="/home/nicolvisser/Workspace/zerosyl/wandb/offline-run-20251128_205820-5vcdyt5y/files/best.pt",
+        output_path="output/submissions/test/lexical/dev.txt",
         batch_size=128,
         num_workers=23,
-        dedupe=False,
     )
 
     compute_loglikelihoods(
-        units_dir="/home/nicolvisser/Data/zerosyl/v0.4.0/ulm-units-10000/sLM21-dataset/syntactic/dev",
-        checkpoint_path="/home/nicolvisser/Workspace/zerosyl/wandb/run-20251118_202437-2hhkxoxk/files/step-3000.pt",
-        output_path="output/submissions/ulm-v0.4.0-units-10000/syntactic/dev.txt",
+        segments_dir="/home/nicolvisser/Workspace/zerosyl/output/segments/ZeroSylDiscrete-v040-k-10000/sLM21-dataset/syntactic/dev",
+        checkpoint_path="/home/nicolvisser/Workspace/zerosyl/wandb/offline-run-20251128_205820-5vcdyt5y/files/best.pt",
+        output_path="output/submissions/test/syntactic/dev.txt",
         batch_size=128,
         num_workers=23,
-        dedupe=False,
     )
 
     # activate zrc environment and run:

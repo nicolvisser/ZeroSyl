@@ -42,8 +42,6 @@ class TrainConfig:
 
     # --- ULM specific configuration ---
     train_ctx_win_size: int = 2048
-    dedupe: bool = False
-    label_smoothing: float = 0.1
 
     # --- Optimizer / learning rate schedule ---
     lr_init: float = 0.0
@@ -91,12 +89,10 @@ class TokenizedUnitsUtteranceDataset(Dataset):
         units_dir: str,
         tokenize_fn: Callable,
         pattern: str = "**/*.pt",
-        dedupe: bool = True,
     ):
         self.units_paths = sorted(list(Path(units_dir).glob(pattern)))
         assert len(self.units_paths) > 0, "No units found"
         self.tokenize_fn = tokenize_fn
-        self.dedupe = dedupe
 
     def __len__(self) -> int:
         return len(self.units_paths)
@@ -104,10 +100,7 @@ class TokenizedUnitsUtteranceDataset(Dataset):
     def __getitem__(self, idx: int) -> torch.Tensor:
         units_path = self.units_paths[idx]
         units = torch.load(units_path).long()
-        if self.dedupe:
-            units = torch.unique_consecutive(units)
         tokens = self.tokenize_fn(units)
-        tokens = torch.from_numpy
         return tokens
 
 
@@ -218,7 +211,6 @@ class Trainer:
             units_dir=train_cfg.valid_units_dir,
             tokenize_fn=self.model.tokenize,
             pattern=train_cfg.valid_units_pattern,
-            dedupe=train_cfg.dedupe,
         )
         self.train_loader = DataLoader(
             train_dataset,
@@ -258,9 +250,7 @@ class Trainer:
         src_tokens = src_tokens.to(self.train_cfg.device)
         tgt_tokens = tgt_tokens.to(self.train_cfg.device)
         logits = self.model.forward(src_tokens, seqlens)
-        loss = torch.nn.functional.cross_entropy(
-            logits, tgt_tokens, label_smoothing=self.train_cfg.label_smoothing
-        )
+        loss = torch.nn.functional.cross_entropy(logits, tgt_tokens)
         return loss
 
     def valid_step(self, batch):

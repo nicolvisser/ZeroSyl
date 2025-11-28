@@ -313,6 +313,18 @@ class WavLM(nn.Module):
         model.eval()
         return model
 
+    @classmethod
+    def from_remote(cls):
+        checkpoint = torch.hub.load_state_dict_from_url(
+            # "https://github.com/nicolvisser/ZeroSyl/releases/download/v0.4.0/WavLM-Large.pt"
+            "https://storage.googleapis.com/zerospeech-checkpoints/WavLM-Large.pt"
+        )
+        cfg = WavLMConfig(checkpoint["cfg"])
+        model = cls(cfg)
+        model.load_state_dict(checkpoint["model"])
+        model.eval()
+        return model
+
     def apply_mask(self, x, padding_mask):
         B, T, C = x.shape
         if self.mask_prob > 0:
@@ -609,7 +621,9 @@ class TransformerEncoder(nn.Module):
         nn.init.normal_(self.pos_conv.weight, mean=0, std=std)
         nn.init.constant_(self.pos_conv.bias, 0)
 
-        self.pos_conv = nn.utils.weight_norm(self.pos_conv, name="weight", dim=2)
+        self.pos_conv = nn.utils.parametrizations.weight_norm(
+            self.pos_conv, name="weight", dim=2
+        )
         self.pos_conv = nn.Sequential(self.pos_conv, SamePad(args.conv_pos), nn.GELU())
 
         if hasattr(args, "relative_position_embedding"):

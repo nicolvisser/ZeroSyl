@@ -1,4 +1,3 @@
-from functools import reduce
 from typing import Tuple
 
 import faiss
@@ -91,6 +90,22 @@ class ZeroSylDiscrete(ZeroSylContinuous):
         model.eval()
         return model
 
+    @classmethod
+    def from_remote(cls) -> "ZeroSylDiscrete":
+        checkpoint = torch.hub.load_state_dict_from_url(
+            # "https://github.com/nicolvisser/ZeroSyl/releases/download/v0.4.0/WavLM-Large.pt"
+            "https://storage.googleapis.com/zerospeech-checkpoints/WavLM-Large.pt"
+        )
+        centroids = torch.hub.load_state_dict_from_url(
+            # "https://github.com/nicolvisser/ZeroSyl/releases/download/v0.4.0/zerosyl-v040-centroids-k-10000.pt"
+            "https://storage.googleapis.com/zerospeech-checkpoints/zerosyl-v040-centroids-k-10000.pt"
+        )
+        cfg = WavLMConfig(checkpoint["cfg"])
+        model = cls(cfg, centroids)
+        model.load_state_dict(checkpoint["model"])
+        model.eval()
+        return model
+
     def encode(
         self, wav: torch.Tensor
     ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
@@ -132,6 +147,26 @@ class ZeroSylCollapsed(ZeroSylDiscrete):
         checkpoint = torch.load(checkpoint_path)
         centroids = torch.load(centroids_path)
         silences = torch.load(silences_path)
+        cfg = WavLMConfig(checkpoint["cfg"])
+        model = cls(cfg, centroids, silences)
+        model.load_state_dict(checkpoint["model"])
+        model.eval()
+        return model
+
+    @classmethod
+    def from_remote(cls) -> "ZeroSylCollapsed":
+        checkpoint = torch.hub.load_state_dict_from_url(
+            # "https://github.com/nicolvisser/ZeroSyl/releases/download/v0.4.0/WavLM-Large.pt"
+            "https://storage.googleapis.com/zerospeech-checkpoints/WavLM-Large.pt"
+        )
+        centroids = torch.hub.load_state_dict_from_url(
+            # "https://github.com/nicolvisser/ZeroSyl/releases/download/v0.4.0/zerosyl-v040-centroids-k-10000.pt"
+            "https://storage.googleapis.com/zerospeech-checkpoints/zerosyl-v040-centroids-k-10000.pt"
+        )
+        silences = torch.hub.load_state_dict_from_url(
+            # "https://github.com/nicolvisser/ZeroSyl/releases/download/v0.4.0/zerosyl-v040-silences-k-10000.pt"
+            "https://storage.googleapis.com/zerospeech-checkpoints/zerosyl-v040-silences-k-10000.pt"
+        )
         cfg = WavLMConfig(checkpoint["cfg"])
         model = cls(cfg, centroids, silences)
         model.load_state_dict(checkpoint["model"])

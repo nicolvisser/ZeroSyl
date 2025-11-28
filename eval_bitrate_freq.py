@@ -8,23 +8,33 @@ from tqdm import tqdm
 # fmt: off
 systems = [
     {
-        "name": "SylBoost 6.25",
-        "segments_dir": "output/segments/syllablelm-625-official-ids-k-8192/LibriSpeech",
+        "name": "SylBoost 5.00Hz",
+        "segments_dir": "output/segments/SylBoost500-k-16384/LibriSpeech",
+        "vocab_size": 16384
+    },
+    {
+        "name": "SylBoost 6.25Hz",
+        "segments_dir": "output/segments/SylBoost625-k-8192/LibriSpeech",
         "vocab_size": 8192
     },
     {
+        "name": "SylBoost 8.33Hz",
+        "segments_dir": "output/segments/SylBoost833-k-2048",
+        "vocab_size": 2048
+    },
+    {
         "name": "Sylber",
-        "segments_dir": "output/segments/sylber-custom-centroids-with-silence-k-10001/LibriSpeech",
+        "segments_dir": "output/segments/Sylber-k-10001/LibriSpeech",
         "vocab_size": 10001
     },
     {
-        "name": "ZeroSyl w/o collapsing",
-        "segments_dir": "output/segments/zerosyl-v040-with-silences-k-10000/LibriSpeech",
+        "name": "ZeroSyl Discrete",
+        "segments_dir": "output/segments/ZeroSylDiscrete-v040-k-10000/LibriSpeech",
         "vocab_size": 10000
     },
     {
-        "name": "ZeroSyl",
-        "segments_dir": "output/segments/zerosyl-v040-collapsed-silences-k-9116/LibriSpeech",
+        "name": "ZeroSyl Collapse",
+        "segments_dir": "output/segments/ZeroSylCollapsed-v040-k-9116/LibriSpeech",
         "vocab_size": 9116
     },
 ]
@@ -78,7 +88,7 @@ for system in systems:
     freq = len(all_tokens) / total_duration
 
     print(system["name"])
-    print(f"Frequency [Hz]:  {freq:.2f}")
-    print(f"Bitrate (entropic) [bps]:   {bitrate:.0f}")
-    print(f"Bitrate (storage) [bps]:   {bitrate_naive:.0f}")
+    print(f"Frequency [Hz]:             {freq:>7.2f}")
+    print(f"Bitrate (entropic) [bps]:   {bitrate:>4.0f}")
+    print(f"Bitrate (storage) [bps]:    {bitrate_naive:>4.0f}")
     print()

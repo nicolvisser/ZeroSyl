@@ -20,7 +20,7 @@ class TrainConfig:
     # --- Wandb details ---
     entity: str = "zerospeech"
     project: str = "zerosyl-ulm"
-    name: str = "zerosyl-ulm-base-v040-k-9116"
+    name: str = "ULM-Base-ZeroSylDiscrete-v040-k-10000"
 
     # --- General training control ---
     device: str = "cuda"
@@ -31,20 +31,18 @@ class TrainConfig:
     num_workers: int = 23
 
     # --- Data configuration ---
-    train_units_dir: str = (
-        "/home/nicolvisser/Data/zerosyl/v0.4.0/ulm-units-9116/LibriSpeech"
+    train_segments_dir: str = (
+        "/home/nicolvisser/Workspace/zerosyl/output/segments/ZeroSylDiscrete-v040-k-10000/LibriSpeech"
     )
-    train_units_pattern: str = "train*/**/*.pt"
+    train_segments_pattern: str = "train*/**/*.pt"
 
-    valid_units_dir: str = (
-        "/home/nicolvisser/Data/zerosyl/v0.4.0/ulm-units-9116/LibriSpeech"
+    valid_segments_dir: str = (
+        "/home/nicolvisser/Workspace/zerosyl/output/segments/ZeroSylDiscrete-v040-k-10000/LibriSpeech"
     )
-    valid_units_pattern: str = "dev*/**/*.pt"
+    valid_segments_pattern: str = "dev*/**/*.pt"
 
     # --- ULM specific configuration ---
     train_ctx_win_size: int = 2048
-    dedupe: bool = False
-    label_smoothing: float = 0.1
 
     # --- Optimizer / learning rate schedule ---
     lr_init: float = 0.0
@@ -57,26 +55,23 @@ class TrainConfig:
     eps: float = 1e-8
 
 
-class UnitsDataset(Dataset):
+class UnitsDatasetFromSegments(Dataset):
     def __init__(
         self,
-        units_dir: str,
+        segments_dir: str,
         pattern: str = "**/*.pt",
-        dedupe: bool = True,
     ):
-        self.units_paths = sorted(list(Path(units_dir).glob(pattern)))
-        assert len(self.units_paths) > 0, "No units found"
-        self.dedupe = dedupe
+        self.segments_paths = sorted(list(Path(segments_dir).glob(pattern)))
+        assert len(self.segments_paths) > 0, "No segment files found"
 
     def __len__(self) -> int:
-        return len(self.units_paths)
+        return len(self.segments_paths)
 
     def __getitem__(self, idx: int) -> Tuple[int, torch.Tensor]:
-        units_path = self.units_paths[idx]
-        chapter_id = units_path.parent.name
-        units = torch.load(units_path).long()
-        if self.dedupe:
-            units = torch.unique_consecutive(units)
+        segments_path = self.segments_paths[idx]
+        chapter_id = segments_path.parent.name
+        segments = torch.load(segments_path).long()  # (T,3) (starts, stops, ids)
+        units = segments[:, 2]
         return chapter_id, units
 
 
@@ -86,9 +81,8 @@ class TokenizedUnitsUtteranceDataset(Dataset):
         units_dir: str,
         tokenize_fn: Callable,
         pattern: str = "**/*.pt",
-        dedupe: bool = True,
     ):
-        self.dataset = UnitsDataset(units_dir, pattern, dedupe)
+        self.dataset = UnitsDatasetFromSegments(units_dir, pattern)
         self.tokenize_fn = tokenize_fn
 
     def __len__(self) -> int:
@@ -106,10 +100,9 @@ class TokenizedUnitsChunkedDataset(Dataset):
         units_dir: str,
         tokenize_fn: Callable,
         pattern: str = "**/*.pt",
-        dedupe: bool = True,
         max_chunk_size: int = 256,
     ):
-        self.dataset = UnitsDataset(units_dir, pattern, dedupe)
+        self.dataset = UnitsDatasetFromSegments(units_dir, pattern)
         self.tokenize_fn = tokenize_fn
         self.chunk_size = max_chunk_size
 
@@ -245,17 +238,15 @@ class Trainer:
         )
 
         train_dataset = TokenizedUnitsChunkedDataset(
-            units_dir=train_cfg.train_units_dir,
+            units_dir=train_cfg.train_segments_dir,
             tokenize_fn=self.model.tokenize,
-            pattern=train_cfg.train_units_pattern,
-            dedupe=train_cfg.dedupe,
+            pattern=train_cfg.train_segments_pattern,
             max_chunk_size=train_cfg.train_ctx_win_size,
         )
         valid_dataset = TokenizedUnitsUtteranceDataset(
-            units_dir=train_cfg.valid_units_dir,
+            units_dir=train_cfg.valid_segments_dir,
             tokenize_fn=self.model.tokenize,
-            pattern=train_cfg.valid_units_pattern,
-            dedupe=train_cfg.dedupe,
+            pattern=train_cfg.valid_segments_pattern,
         )
         self.train_loader = DataLoader(
             train_dataset,
@@ -295,9 +286,7 @@ class Trainer:
         src_tokens = src_tokens.to(self.train_cfg.device)
         tgt_tokens = tgt_tokens.to(self.train_cfg.device)
         logits = self.model.forward(src_tokens, seqlens)
-        loss = torch.nn.functional.cross_entropy(
-            logits, tgt_tokens, label_smoothing=self.train_cfg.label_smoothing
-        )
+        loss = torch.nn.functional.cross_entropy(logits, tgt_tokens)
         return loss
 
     def valid_step(self, batch):
@@ -453,7 +442,7 @@ class Trainer:
 
 if __name__ == "__main__":
     model_cfg = ULMConfig(
-        vocab_size=9116,
+        vocab_size=10000,
         dropout=0.2,
     )
     train_cfg = TrainConfig()
