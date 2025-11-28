@@ -88,7 +88,7 @@ class StreamingTransformerEncoder(nn.Module):
         gelu: bool = True,
         norm_in: bool = True,
         dropout: float = 0.0,
-        **kwargs
+        **kwargs,
     ):
         super().__init__()
         assert dim % num_heads == 0
@@ -114,7 +114,7 @@ class StreamingTransformerEncoder(nn.Module):
                     activation=activation,
                     batch_first=True,
                     dropout=dropout,
-                    **kwargs
+                    **kwargs,
                 )
             )
 

@@ -1,7 +1,7 @@
-from .decoder.pretrained import WavTokenizerArgs
 from .decoder.feature_extractors import EncodecFeaturesArgs
 from .decoder.heads import ISTFTHeadArgs
 from .decoder.models import VocosBackboneArgs
+from .decoder.pretrained import WavTokenizerArgs
 
 ARGS_SMALL_600_24K_4096 = WavTokenizerArgs(
     feature_extractor=EncodecFeaturesArgs(

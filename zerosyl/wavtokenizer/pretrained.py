@@ -6,12 +6,14 @@ URLS = {
 }
 
 
+from typing import Callable, Tuple
+
 import torch
 import torchaudio
-from typing import Callable, Tuple
 
 from .configs import ARGS_SMALL_320_24K_4096, ARGS_SMALL_600_24K_4096
 from .decoder.pretrained import WavTokenizer, WavTokenizerArgs
+
 
 @torch.inference_mode()
 def encode(model: torch.nn.Module, wav: torch.Tensor, sr: int) -> torch.Tensor:
@@ -22,6 +24,7 @@ def encode(model: torch.nn.Module, wav: torch.Tensor, sr: int) -> torch.Tensor:
     _, codes = model.encode(wav, bandwidth_id=bandwidth_id)
     return codes
 
+
 @torch.inference_mode()
 def decode(model: torch.nn.Module, codes: torch.Tensor) -> torch.Tensor:
     device = next(model.parameters()).device
@@ -31,6 +34,7 @@ def decode(model: torch.nn.Module, codes: torch.Tensor) -> torch.Tensor:
     audio_out = model.decode(features, bandwidth_id=bandwidth_id)
     sr = 24000
     return audio_out, sr
+
 
 def _load(
     args: WavTokenizerArgs,
@@ -59,28 +63,20 @@ def _load(
     return model
 
 
-def load_wavtokenizer_small_600_24k_4096(
-    progress: bool = True
-) -> WavTokenizer:
+def load_wavtokenizer_small_600_24k_4096(progress: bool = True) -> WavTokenizer:
     model = _load(
         args=ARGS_SMALL_600_24K_4096,
         url=URLS["small_600_24k_4096"],
         progress=progress,
     )
-    num_params = sum(p.numel() for p in model.parameters())
-    print(f"Loaded WavTokenizer small_600_24k_4096 with {num_params:,} parameters")
     return model
 
 
-def load_small_320_24k_4096(
-    progress: bool = True
-) -> WavTokenizer:
+def load_small_320_24k_4096(progress: bool = True) -> WavTokenizer:
     """WavTokenizer small. 24kHz, 320x downsample (75 Hz), 4096 codebook entries."""
     model, encode, decode = _load(
         args=ARGS_SMALL_320_24K_4096,
         url=URLS["small_320_24k_4096"],
         progress=progress,
     )
-    num_params = sum(p.numel() for p in model.parameters())
-    print(f"Loaded WavTokenizer small_320_24k_4096 with {num_params:,} parameters")
     return model, encode, decode

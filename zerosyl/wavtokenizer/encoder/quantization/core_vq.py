@@ -38,6 +38,7 @@ import torch
 import torch.nn.functional as F
 from torch import nn
 
+
 def default(val: tp.Any, d: tp.Any) -> tp.Any:
     return val if val is not None else d
 
@@ -73,9 +74,9 @@ def kmeans(samples, num_clusters: int, num_iters: int = 10):
 
     for _ in range(num_iters):
         samples_expanded = samples.unsqueeze(1)  # n 1 d
-        means_expanded = means.unsqueeze(0)      # 1 c d
+        means_expanded = means.unsqueeze(0)  # 1 c d
         diffs = samples_expanded - means_expanded
-        
+
         dists = -(diffs**2).sum(dim=-1)
 
         buckets = dists.max(dim=-1).indices
@@ -150,7 +151,7 @@ class EuclideanCodebook(nn.Module):
         self.cluster_size.data.copy_(cluster_size)
         self.inited.data.copy_(torch.Tensor([True]))
         # Make sure all buffers across workers are in sync after initialization
-        #distrib.broadcast_tensors(self.buffers())
+        # distrib.broadcast_tensors(self.buffers())
 
     def replace_(self, samples, mask):
         modified_codebook = torch.where(
@@ -168,7 +169,7 @@ class EuclideanCodebook(nn.Module):
 
         batch_samples = batch_samples.reshape(-1, batch_samples.size(-1))
         self.replace_(batch_samples, mask=expired_codes)
-        #distrib.broadcast_tensors(self.buffers())
+        # distrib.broadcast_tensors(self.buffers())
 
     def preprocess(self, x):
         x = x.reshape(-1, x.size(-1))
