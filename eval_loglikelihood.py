@@ -87,23 +87,24 @@ def compute_loglikelihoods(
 
 if __name__ == "__main__":
     # activate zrc environment and run:
-    # zrc submission:init sLM21 output/submissions/...
+    # zrc submission:init sLM21 output/submissions/ULM-Base-ZeroSylCollapsed-v040-k-9116
+    assert Path("output/submissions/ULM-Base-ZeroSylCollapsed-v040-k-9116").exists()
 
     compute_loglikelihoods(
-        segments_dir="/home/nicolvisser/Workspace/zerosyl/output/segments/ZeroSylDiscrete-v040-k-10000/sLM21-dataset/lexical/dev",
-        checkpoint_path="/home/nicolvisser/Workspace/zerosyl/wandb/offline-run-20251128_205820-5vcdyt5y/files/best.pt",
-        output_path="output/submissions/test/lexical/dev.txt",
+        segments_dir="/home/nicolvisser/Workspace/zerosyl/output/segments/ZeroSylCollapsed-v040-k-9116/sLM21-dataset/lexical/dev",
+        checkpoint_path="checkpoints/ULM-Base-ZeroSylCollapsed-v040-k-9116",
+        output_path="output/submissions/ULM-Base-ZeroSylCollapsed-v040-k-9116/lexical/dev.txt",
         batch_size=128,
         num_workers=23,
     )
 
     compute_loglikelihoods(
-        segments_dir="/home/nicolvisser/Workspace/zerosyl/output/segments/ZeroSylDiscrete-v040-k-10000/sLM21-dataset/syntactic/dev",
-        checkpoint_path="/home/nicolvisser/Workspace/zerosyl/wandb/offline-run-20251128_205820-5vcdyt5y/files/best.pt",
-        output_path="output/submissions/test/syntactic/dev.txt",
+        segments_dir="/home/nicolvisser/Workspace/zerosyl/output/segments/ZeroSylCollapsed-v040-k-9116/sLM21-dataset/syntactic/dev",
+        checkpoint_path="checkpoints/ULM-Base-ZeroSylCollapsed-v040-k-9116",
+        output_path="output/submissions/ULM-Base-ZeroSylCollapsed-v040-k-9116/syntactic/dev.txt",
         batch_size=128,
         num_workers=23,
     )
 
     # activate zrc environment and run:
-    # zrc benchmarks:run sLM21 output/submissions/ulm-v0.4.0-units-10000 -s dev -t lexical syntactic
+    # zrc benchmarks:run sLM21 output/submissions/ULM-Base-ZeroSylCollapsed-v040-k-9116 -s dev -t lexical syntactic

@@ -18,41 +18,37 @@ from zerosyl.ulm import ULM, ULMConfig
 @dataclass
 class TrainConfig:
     # --- Wandb details ---
-    entity: str = "zerospeech"
-    project: str = "zerosyl-ulm"
-    name: str = "ULM-Base-ZeroSylDiscrete-v040-k-10000"
+    entity: str
+    project: str
+    name: str
 
-    # --- General training control ---
-    device: str = "cuda"
-    dtype: torch.dtype = torch.bfloat16
-    accumulation_steps: int = 4
-    grad_clip_max_norm: float = 1.0
-    batch_size: int = 10
-    num_workers: int = 23
+    # --- General training control --
+    device: str
+    dtype: torch.dtype
+    accumulation_steps: int
+    grad_clip_max_norm: float
+    batch_size: int
+    num_workers: int
 
     # --- Data configuration ---
-    train_segments_dir: str = (
-        "/home/nicolvisser/Workspace/zerosyl/output/segments/ZeroSylDiscrete-v040-k-10000/LibriSpeech"
-    )
-    train_segments_pattern: str = "train*/**/*.pt"
+    train_segments_dir: str
+    train_segments_pattern: str
 
-    valid_segments_dir: str = (
-        "/home/nicolvisser/Workspace/zerosyl/output/segments/ZeroSylDiscrete-v040-k-10000/LibriSpeech"
-    )
-    valid_segments_pattern: str = "dev*/**/*.pt"
+    valid_segments_dir: str
+    valid_segments_pattern: str
 
     # --- ULM specific configuration ---
-    train_ctx_win_size: int = 2048
+    train_ctx_win_size: int
 
     # --- Optimizer / learning rate schedule ---
-    lr_init: float = 0.0
-    lr_max: float = 4e-4
-    lr_final: float = 4e-5
-    n_linear_steps: int = 800
-    n_decay_steps: int = 10_000 - 800
-    betas: tuple[float, float] = (0.9, 0.98)
-    weight_decay: float = 0.02
-    eps: float = 1e-8
+    lr_init: float
+    lr_max: float
+    lr_final: float
+    n_linear_steps: int
+    n_decay_steps: int
+    betas: tuple[float, float]
+    weight_decay: float
+    eps: float
 
 
 class UnitsDatasetFromSegments(Dataset):
@@ -78,11 +74,11 @@ class UnitsDatasetFromSegments(Dataset):
 class TokenizedUnitsUtteranceDataset(Dataset):
     def __init__(
         self,
-        units_dir: str,
+        segments_dir: str,
         tokenize_fn: Callable,
         pattern: str = "**/*.pt",
     ):
-        self.dataset = UnitsDatasetFromSegments(units_dir, pattern)
+        self.dataset = UnitsDatasetFromSegments(segments_dir, pattern)
         self.tokenize_fn = tokenize_fn
 
     def __len__(self) -> int:
@@ -97,12 +93,12 @@ class TokenizedUnitsUtteranceDataset(Dataset):
 class TokenizedUnitsChunkedDataset(Dataset):
     def __init__(
         self,
-        units_dir: str,
+        segments_dir: str,
         tokenize_fn: Callable,
         pattern: str = "**/*.pt",
         max_chunk_size: int = 256,
     ):
-        self.dataset = UnitsDatasetFromSegments(units_dir, pattern)
+        self.dataset = UnitsDatasetFromSegments(segments_dir, pattern)
         self.tokenize_fn = tokenize_fn
         self.chunk_size = max_chunk_size
 
@@ -238,13 +234,13 @@ class Trainer:
         )
 
         train_dataset = TokenizedUnitsChunkedDataset(
-            units_dir=train_cfg.train_segments_dir,
+            segments_dir=train_cfg.train_segments_dir,
             tokenize_fn=self.model.tokenize,
             pattern=train_cfg.train_segments_pattern,
             max_chunk_size=train_cfg.train_ctx_win_size,
         )
         valid_dataset = TokenizedUnitsUtteranceDataset(
-            units_dir=train_cfg.valid_segments_dir,
+            segments_dir=train_cfg.valid_segments_dir,
             tokenize_fn=self.model.tokenize,
             pattern=train_cfg.valid_segments_pattern,
         )
@@ -439,19 +435,55 @@ class Trainer:
                     Path(checkpoint_path).parent.mkdir(parents=True, exist_ok=True)
                     torch.save(checkpoint, checkpoint_path)
                     self.pbar.close()
+                    self.run.finish()
                     return
 
 
 if __name__ == "__main__":
-    model_cfg = ULMConfig(
-        vocab_size=10000,
-        dropout=0.2,
-    )
-    train_cfg = TrainConfig()
     torch.set_float32_matmul_precision("high")
+
+    model_cfg = ULMConfig(
+        vocab_size=9116,
+        dim=768,
+        n_layers=12,
+        head_dim=64,
+        hidden_dim=4 * 768,
+        n_heads=12,
+        n_kv_heads=12,
+        dropout=0.1,
+        norm_eps=1e-6,
+        rope_theta=10000.0,
+    )
+
+    train_cfg = TrainConfig(
+        entity="zerospeech",
+        project="zerosyl-ulm",
+        name=f"ULM-Base-ZeroSylCollapsed-v040-k-9116",
+        device="cuda",
+        dtype=torch.bfloat16,
+        accumulation_steps=4,
+        grad_clip_max_norm=1.0,
+        batch_size=10,
+        num_workers=23,
+        train_segments_dir="/home/nicolvisser/Workspace/zerosyl/output/segments/ZeroSylCollapsed-v040-k-9116/LibriSpeech",
+        train_segments_pattern="train*/**/*.pt",
+        valid_segments_dir="/home/nicolvisser/Workspace/zerosyl/output/segments/ZeroSylCollapsed-v040-k-9116/LibriSpeech",
+        valid_segments_pattern="dev*/**/*.pt",
+        train_ctx_win_size=2048,
+        lr_init=0.0,
+        lr_max=2e-4,
+        lr_final=2e-5,
+        n_linear_steps=320,
+        n_decay_steps=4000 - 320,
+        betas=(0.9, 0.98),
+        weight_decay=0.01,
+        eps=1e-8,
+    )
+
     trainer = Trainer(model_cfg, train_cfg)
+
     trainer.train(
-        max_global_step=10_000,
+        max_global_step=4000,
         log_every_n_global_steps=1,
-        validate_every_n_global_steps=500,
+        validate_every_n_global_steps=250,
     )

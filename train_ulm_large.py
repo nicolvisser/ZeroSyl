@@ -18,40 +18,35 @@ from zerosyl.ulm import ULM, ULMConfig
 @dataclass
 class TrainConfig:
     # --- Wandb details ---
-    entity: str = "zerospeech"
-    project: str = "zerosyl-ulm"
-    name: str = "zerosyl-ulm-large-v040-k-9116"
+    entity: str
+    project: str
+    name: str
 
     # --- General training control ---
-    device: str = "cuda"
-    dtype: torch.dtype = torch.bfloat16
-    accumulation_steps: int = 1
-    grad_clip_max_norm: float = 1.0
-    batch_size: int = 40  #
-    num_workers: int = 23
+    device: str
+    dtype: torch.dtype
+    accumulation_steps: int
+    grad_clip_max_norm: float
+    batch_size: int
+    num_workers: int
 
     # --- Data configuration ---
-    train_mmap_path: str = (
-        "/mnt/newt/zerosyl/v0.4.0/librilight-zerosyl-v040-tokens-k-9116.bin"
-    )
-
-    valid_units_dir: str = (
-        "/home/nicolvisser/Data/zerosyl/v0.4.0/ulm-units-9116/LibriSpeech"
-    )
-    valid_units_pattern: str = "dev*/**/*.pt"
+    train_mmap_path: str
+    valid_segments_dir: str
+    valid_segments_pattern: str
 
     # --- ULM specific configuration ---
-    train_ctx_win_size: int = 2048
+    train_ctx_win_size: int
 
     # --- Optimizer / learning rate schedule ---
-    lr_init: float = 0.0
-    lr_max: float = 4e-4
-    lr_final: float = 4e-5
-    n_linear_steps: int = 16_000
-    n_decay_steps: int = 200_000 - 16_000
-    betas: tuple[float, float] = (0.9, 0.98)
-    weight_decay: float = 0.01
-    eps: float = 1e-8
+    lr_init: float
+    lr_max: float
+    lr_final: float
+    n_linear_steps: int
+    n_decay_steps: int
+    betas: tuple[float, float]
+    weight_decay: float
+    eps: float
 
 
 class TokenizedUnitsChunkedMMapDataset(Dataset):
@@ -86,20 +81,21 @@ class TokenizedUnitsChunkedMMapDataset(Dataset):
 class TokenizedUnitsUtteranceDataset(Dataset):
     def __init__(
         self,
-        units_dir: str,
+        segments_dir: str,
         tokenize_fn: Callable,
         pattern: str = "**/*.pt",
     ):
-        self.units_paths = sorted(list(Path(units_dir).glob(pattern)))
-        assert len(self.units_paths) > 0, "No units found"
+        self.segments_paths = sorted(list(Path(segments_dir).glob(pattern)))
+        assert len(self.segments_paths) > 0, "No segment files found"
         self.tokenize_fn = tokenize_fn
 
     def __len__(self) -> int:
-        return len(self.units_paths)
+        return len(self.segments_paths)
 
     def __getitem__(self, idx: int) -> torch.Tensor:
-        units_path = self.units_paths[idx]
-        units = torch.load(units_path).long()
+        segments_path = self.segments_paths[idx]
+        segments = torch.load(segments_path).long()
+        units = segments[:, 2]
         tokens = self.tokenize_fn(units)
         return tokens
 
@@ -208,9 +204,9 @@ class Trainer:
             tokenize_fn=self.model.tokenize,
         )
         valid_dataset = TokenizedUnitsUtteranceDataset(
-            units_dir=train_cfg.valid_units_dir,
+            segments_dir=train_cfg.valid_segments_dir,
             tokenize_fn=self.model.tokenize,
-            pattern=train_cfg.valid_units_pattern,
+            pattern=train_cfg.valid_segments_pattern,
         )
         self.train_loader = DataLoader(
             train_dataset,
@@ -403,17 +399,52 @@ class Trainer:
                     Path(checkpoint_path).parent.mkdir(parents=True, exist_ok=True)
                     torch.save(checkpoint, checkpoint_path)
                     self.pbar.close()
+                    self.run.finish()
                     return
 
 
 if __name__ == "__main__":
+    torch.set_float32_matmul_precision("high")
+
     model_cfg = ULMConfig(
         vocab_size=9116,
+        dim=1024,
+        n_layers=24,
+        head_dim=64,
+        hidden_dim=4 * 1024,
+        n_heads=16,
+        n_kv_heads=16,
         dropout=0.1,
+        norm_eps=1e-6,
+        rope_theta=10000.0,
     )
-    train_cfg = TrainConfig()
-    torch.set_float32_matmul_precision("high")
+
+    train_cfg = TrainConfig(
+        entity="zerospeech",
+        project="zerosyl-ulm",
+        name=f"ULM-Large-ZeroSylCollapsed-v040-k-9116",
+        device="cuda",
+        dtype=torch.bfloat16,
+        accumulation_steps=1,
+        grad_clip_max_norm=1.0,
+        batch_size=40,
+        num_workers=23,
+        train_mmap_path="/mnt/newt/zerosyl/v0.4.0/librilight-zerosyl-v040-tokens-k-9116.bin",
+        valid_segments_dir="/home/nicolvisser/Workspace/zerosyl/output/segments/ZeroSylCollapsed-v040-k-9116/LibriSpeech",
+        valid_segments_pattern="dev*/**/*.pt",
+        train_ctx_win_size=2048,
+        lr_init=0.0,
+        lr_max=2e-4,
+        lr_final=2e-5,
+        n_linear_steps=16_000,
+        n_decay_steps=200_000 - 16_000,
+        betas=(0.9, 0.98),
+        weight_decay=0.01,
+        eps=1e-8,
+    )
+
     trainer = Trainer(model_cfg, train_cfg)
+
     trainer.train(
         max_global_step=200_000,
         log_every_n_global_steps=1,
