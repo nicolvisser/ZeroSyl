@@ -47,6 +47,8 @@ def compute_loglikelihoods(
 ):
     model = ULM.from_pretrained_checkpoint(checkpoint_path).cuda()
     model.eval()
+    num_params = sum(map(torch.numel, model.parameters()))
+    print(f"Model loaded with {num_params,} parameters.")
 
     print(f"Computing loglikelihoods for units in {segments_dir}...")
 
@@ -87,24 +89,23 @@ def compute_loglikelihoods(
 
 if __name__ == "__main__":
     # activate zrc environment and run:
-    # zrc submission:init sLM21 output/submissions/ULM-Base-ZeroSylCollapsed-v040-k-9116
-    assert Path("output/submissions/ULM-Base-ZeroSylCollapsed-v040-k-9116").exists()
+    # zrc submission:init sLM21 output/submissions/ULM-Large-ZeroSylCollapsed-v040-k-9116-step-10000
 
     compute_loglikelihoods(
         segments_dir="/home/nicolvisser/Workspace/zerosyl/output/segments/ZeroSylCollapsed-v040-k-9116/sLM21-dataset/lexical/dev",
-        checkpoint_path="checkpoints/ULM-Base-ZeroSylCollapsed-v040-k-9116",
-        output_path="output/submissions/ULM-Base-ZeroSylCollapsed-v040-k-9116/lexical/dev.txt",
+        checkpoint_path="/home/nicolvisser/Workspace/zerosyl/checkpoints/ULM-Large-ZeroSylCollapsed-v040-k-9116/step-10000.pt",
+        output_path="output/submissions/ULM-Large-ZeroSylCollapsed-v040-k-9116-step-10000/lexical/dev.txt",
         batch_size=128,
         num_workers=23,
     )
 
     compute_loglikelihoods(
         segments_dir="/home/nicolvisser/Workspace/zerosyl/output/segments/ZeroSylCollapsed-v040-k-9116/sLM21-dataset/syntactic/dev",
-        checkpoint_path="checkpoints/ULM-Base-ZeroSylCollapsed-v040-k-9116",
-        output_path="output/submissions/ULM-Base-ZeroSylCollapsed-v040-k-9116/syntactic/dev.txt",
+        checkpoint_path="/home/nicolvisser/Workspace/zerosyl/checkpoints/ULM-Large-ZeroSylCollapsed-v040-k-9116/step-10000.pt",
+        output_path="output/submissions/ULM-Large-ZeroSylCollapsed-v040-k-9116-step-10000/syntactic/dev.txt",
         batch_size=128,
         num_workers=23,
     )
 
     # activate zrc environment and run:
-    # zrc benchmarks:run sLM21 output/submissions/ULM-Base-ZeroSylCollapsed-v040-k-9116 -s dev -t lexical syntactic
+    # zrc benchmarks:run sLM21 output/submissions/ULM-Large-ZeroSylCollapsed-v040-k-9116-step-10000 -s dev -t lexical syntactic

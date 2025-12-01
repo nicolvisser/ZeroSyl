@@ -408,12 +408,12 @@ if __name__ == "__main__":
 
     model_cfg = ULMConfig(
         vocab_size=9116,
-        dim=1024,
-        n_layers=24,
+        dim=768,
+        n_layers=12,
         head_dim=64,
-        hidden_dim=4 * 1024,
-        n_heads=16,
-        n_kv_heads=16,
+        hidden_dim=4 * 768,
+        n_heads=12,
+        n_kv_heads=12,
         dropout=0.1,
         norm_eps=1e-6,
         rope_theta=10000.0,
@@ -422,12 +422,12 @@ if __name__ == "__main__":
     train_cfg = TrainConfig(
         entity="zerospeech",
         project="zerosyl-ulm",
-        name=f"ULM-Large-ZeroSylCollapsed-v040-k-9116",
+        name=f"ULM-LL-ZeroSylCollapsed-v040-k-9116",
         device="cuda",
         dtype=torch.bfloat16,
-        accumulation_steps=1,
+        accumulation_steps=4,
         grad_clip_max_norm=1.0,
-        batch_size=40,
+        batch_size=10,
         num_workers=23,
         train_mmap_path="/mnt/newt/zerosyl/v0.4.0/librilight-zerosyl-v040-tokens-k-9116.bin",
         valid_segments_dir="/home/nicolvisser/Workspace/zerosyl/output/segments/ZeroSylCollapsed-v040-k-9116/LibriSpeech",
@@ -448,5 +448,5 @@ if __name__ == "__main__":
     trainer.train(
         max_global_step=200_000,
         log_every_n_global_steps=1,
-        validate_every_n_global_steps=5_000,
+        validate_every_n_global_steps=1_000,
     )

@@ -458,7 +458,7 @@ if __name__ == "__main__":
     train_cfg = TrainConfig(
         entity="zerospeech",
         project="zerosyl-ulm",
-        name=f"ULM-Base-ZeroSylCollapsed-v040-k-9116",
+        name=f"ULM-LS-ZeroSylCollapsed-v040-k-9116",
         device="cuda",
         dtype=torch.bfloat16,
         accumulation_steps=4,
