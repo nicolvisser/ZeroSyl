@@ -88,24 +88,40 @@ def compute_loglikelihoods(
 
 
 if __name__ == "__main__":
-    # activate zrc environment and run:
-    # zrc submission:init sLM21 output/submissions/ULM-Large-ZeroSylCollapsed-v040-k-9116-step-10000
+    # before running this script, activate zrc environment and run:
+    # zrc submission:init sLM21 output/submissions/ULM-Base-ZeroSylCollapsed-v040-k-9116-60kh
 
     compute_loglikelihoods(
-        segments_dir="/home/nicolvisser/Workspace/zerosyl/output/segments/ZeroSylCollapsed-v040-k-9116/sLM21-dataset/lexical/dev",
-        checkpoint_path="/home/nicolvisser/Workspace/zerosyl/checkpoints/ULM-Large-ZeroSylCollapsed-v040-k-9116/step-10000.pt",
-        output_path="output/submissions/ULM-Large-ZeroSylCollapsed-v040-k-9116-step-10000/lexical/dev.txt",
+        segments_dir="output/segments/ZeroSylCollapsed-v040-k-9116/sLM21-dataset/lexical/dev",
+        checkpoint_path="checkpoints/ULM-Base-ZeroSylCollapsed-v040-k-9116-60kh/best.pt",
+        output_path="output/submissions/ULM-Base-ZeroSylCollapsed-v040-k-9116-60kh/lexical/dev.txt",
         batch_size=128,
         num_workers=23,
     )
 
     compute_loglikelihoods(
-        segments_dir="/home/nicolvisser/Workspace/zerosyl/output/segments/ZeroSylCollapsed-v040-k-9116/sLM21-dataset/syntactic/dev",
-        checkpoint_path="/home/nicolvisser/Workspace/zerosyl/checkpoints/ULM-Large-ZeroSylCollapsed-v040-k-9116/step-10000.pt",
-        output_path="output/submissions/ULM-Large-ZeroSylCollapsed-v040-k-9116-step-10000/syntactic/dev.txt",
+        segments_dir="output/segments/ZeroSylCollapsed-v040-k-9116/sLM21-dataset/syntactic/dev",
+        checkpoint_path="checkpoints/ULM-Base-ZeroSylCollapsed-v040-k-9116-60kh/best.pt",
+        output_path="output/submissions/ULM-Base-ZeroSylCollapsed-v040-k-9116-60kh/syntactic/dev.txt",
         batch_size=128,
         num_workers=23,
     )
 
-    # activate zrc environment and run:
-    # zrc benchmarks:run sLM21 output/submissions/ULM-Large-ZeroSylCollapsed-v040-k-9116-step-10000 -s dev -t lexical syntactic
+    compute_loglikelihoods(
+        segments_dir="output/segments/ZeroSylCollapsed-v040-k-9116/sLM21-dataset/lexical/test",
+        checkpoint_path="checkpoints/ULM-Base-ZeroSylCollapsed-v040-k-9116-60kh/best.pt",
+        output_path="output/submissions/ULM-Base-ZeroSylCollapsed-v040-k-9116-60kh/lexical/test.txt",
+        batch_size=128,
+        num_workers=23,
+    )
+
+    compute_loglikelihoods(
+        segments_dir="output/segments/ZeroSylCollapsed-v040-k-9116/sLM21-dataset/syntactic/test",
+        checkpoint_path="checkpoints/ULM-Base-ZeroSylCollapsed-v040-k-9116-60kh/best.pt",
+        output_path="output/submissions/ULM-Base-ZeroSylCollapsed-v040-k-9116-60kh/syntactic/test.txt",
+        batch_size=128,
+        num_workers=23,
+    )
+
+    # after running this script, activate zrc environment and run:
+    # zrc benchmarks:run sLM21 output/submissions/ULM-Base-ZeroSylCollapsed-v040-k-9116-60kh -s dev test -t lexical syntactic
