@@ -1,5 +1,6 @@
 import math
 from dataclasses import dataclass
+from itertools import chain
 from pathlib import Path
 from typing import Callable, List, Tuple
 
@@ -17,78 +18,72 @@ from zerosyl.acoustic import AcousticModel, AcousticModelConfig
 @dataclass
 class TrainConfig:
     # --- Wandb details ---
-    entity: str = "zerospeech"
-    project: str = "zerosyl-acoustic-model"
-    name: str = "sylber-custom-centroids-k-10000-plus-sil"
-
+    entity: str
+    project: str
+    name: str
     # --- General training control ---
-    device: str = "cuda"
-    dtype: torch.dtype = torch.bfloat16
-    accumulation_steps: int = 4
-    grad_clip_max_norm: float = 1.0
-    batch_size: int = 12
-    num_workers: int = 23
-
+    device: str
+    dtype: torch.dtype
+    accumulation_steps: int
+    grad_clip_max_norm: float
+    batch_size: int
+    num_workers: int
     # --- Data configuration ---
-    train_segments_dir: str = (
-        "/mnt/wsl/hermione/zerosyl/output/segments/sylber-custom-centroids-with-silence-k-10001/LibriSpeech"
-    )
-    train_segments_pattern: str = "train*/**/*.pt"
-    train_acoustic_units_dir: str = (
-        "/mnt/wsl/hermione/wavtokenizer/WavTokenizer_small_600_24k_4096/LibriSpeech"
-    )
-    train_acoustic_units_pattern: str = "train*/**/*.pt"
-
-    valid_segments_dir: str = (
-        "/mnt/wsl/hermione/zerosyl/output/segments/sylber-custom-centroids-with-silence-k-10001/LibriSpeech"
-    )
-    valid_segments_pattern: str = "dev*/**/*.pt"
-    valid_acoustic_units_dir: str = (
-        "/mnt/wsl/hermione/wavtokenizer/WavTokenizer_small_600_24k_4096/LibriSpeech"
-    )
-    valid_acoustic_units_pattern: str = "dev*/**/*.pt"
-
+    train_segments_dir: str
+    train_segments_manifest_path: str
+    train_acoustic_units_dir: str
+    train_acoustic_units_manifest_path: str
+    valid_segments_dir: str
+    valid_segments_manifest_path: str
+    valid_acoustic_units_dir: str
+    valid_acoustic_units_manifest_path: str
     # --- Optimizer / learning rate schedule ---
-    lr_init: float = 1e-7
-    lr_max: float = 5e-4
-    lr_final: float = 5e-5
-    n_linear_steps: int = 1600
-    n_decay_steps: int = 20000 - 1600
-    betas: tuple[float, float] = (0.9, 0.98)
-    weight_decay: float = 0.01
-    eps: float = 1e-8
+    lr_init: float
+    lr_max: float
+    lr_final: float
+    n_linear_steps: int
+    n_decay_steps: int
+    betas: tuple[float, float]
+    weight_decay: float
+    eps: float
 
 
 class EncodedDataset(Dataset):
     def __init__(
         self,
         segments_dir: str,
+        segments_manifest_path: str,
         acoustic_units_dir: str,
+        acoustic_units_manifest_path: str,
         tokenize_fn: Callable,
-        segments_pattern: str = "**/*.pt",
-        acoustic_units_pattern: str = "**/*.pt",
     ):
         self.tokenize_fn = tokenize_fn
-        self.segments_paths = sorted(list(Path(segments_dir).glob(segments_pattern)))
-        self.acoustic_units_paths = sorted(
-            list(Path(acoustic_units_dir).glob(acoustic_units_pattern))
+
+        self.segments_dir = Path(segments_dir)
+        self.segments_manifest = Path(segments_manifest_path).read_text().split("\n")
+
+        self.acoustic_units_dir = Path(acoustic_units_dir)
+        self.acoustic_units_manifest = (
+            Path(acoustic_units_manifest_path).read_text().split("\n")
         )
-        assert len(self.segments_paths) > 0, "No segment files found"
-        assert len(self.acoustic_units_paths) > 0, "No acoustic units found"
-        assert len(self.segments_paths) == len(
-            self.acoustic_units_paths
-        ), "Mismatch dataset sizes!"
-        for sp, aup in zip(self.segments_paths, self.acoustic_units_paths):
-            assert sp.stem == aup.stem, "Mismatched stems!"
+        assert len(self.segments_manifest) == len(self.acoustic_units_manifest)
 
     def __len__(self) -> int:
-        return len(self.segments_paths)
+        return len(self.segments_manifest)
 
     def __getitem__(self, idx: int) -> Tuple[int, torch.Tensor]:
-        segments_path = self.segments_paths[idx]
-        acoustic_units_path = self.acoustic_units_paths[idx]
+        segments_path = Path(self.segments_dir) / self.segments_manifest[idx]
+        acoustic_units_path = (
+            Path(self.acoustic_units_dir) / self.acoustic_units_manifest[idx]
+        )
         segments = torch.load(segments_path).long()
         acoustic_units = torch.load(acoustic_units_path).long()
+
+        if len(segments) < 3 or len(acoustic_units) < 3:
+            # rather sample a random item
+            idx = torch.randint(0, len(self.segments_manifest), (1,)).item()
+            return self.__getitem__(idx)
+
         tokens = self.tokenize_fn(segments, acoustic_units)
         return tokens
 
@@ -190,17 +185,17 @@ class Trainer:
 
         train_dataset = EncodedDataset(
             segments_dir=train_cfg.train_segments_dir,
+            segments_manifest_path=train_cfg.train_segments_manifest_path,
             acoustic_units_dir=train_cfg.train_acoustic_units_dir,
+            acoustic_units_manifest_path=train_cfg.train_acoustic_units_manifest_path,
             tokenize_fn=self.model.tokenize_train,
-            segments_pattern=train_cfg.train_segments_pattern,
-            acoustic_units_pattern=train_cfg.train_acoustic_units_pattern,
         )
         valid_dataset = EncodedDataset(
             segments_dir=train_cfg.valid_segments_dir,
+            segments_manifest_path=train_cfg.valid_segments_manifest_path,
             acoustic_units_dir=train_cfg.valid_acoustic_units_dir,
+            acoustic_units_manifest_path=train_cfg.valid_acoustic_units_manifest_path,
             tokenize_fn=self.model.tokenize_train,
-            segments_pattern=train_cfg.valid_segments_pattern,
-            acoustic_units_pattern=train_cfg.valid_acoustic_units_pattern,
         )
         self.train_loader = DataLoader(
             train_dataset,
@@ -330,14 +325,13 @@ class Trainer:
         else:
             self.best_loss = loss
 
-        # save the wavlm model with step number
-        checkpoint_path = Path(self.run.dir) / f"step-{self.current_global_step}.pt"
-        checkpoint = {
-            "model": self.model.state_dict(),
-            "cfg": self.model.cfg.__dict__,
-        }
-        Path(checkpoint_path).parent.mkdir(parents=True, exist_ok=True)
-        torch.save(checkpoint, checkpoint_path)
+            checkpoint_path = Path(self.run.dir) / "best.pt"
+            checkpoint = {
+                "model": self.model.state_dict(),
+                "cfg": self.model.cfg.__dict__,
+            }
+            Path(checkpoint_path).parent.mkdir(parents=True, exist_ok=True)
+            torch.save(checkpoint, checkpoint_path)
 
         return loss, accuracy
 
@@ -393,17 +387,66 @@ class Trainer:
                 if self.current_global_step >= max_global_step:
                     print(f"Reached max steps ({max_global_step})")
                     self.pbar.close()
+
+                    checkpoint_path = (
+                        Path(self.run.dir) / f"step-{self.current_global_step}.pt"
+                    )
+                    checkpoint = {
+                        "model": self.model.state_dict(),
+                        "cfg": self.model.cfg.__dict__,
+                    }
+                    Path(checkpoint_path).parent.mkdir(parents=True, exist_ok=True)
+                    torch.save(checkpoint, checkpoint_path)
+                    self.run.finish()
                     return
 
 
 if __name__ == "__main__":
     model_cfg = AcousticModelConfig(
-        n_semantic_types=10001,
-        n_acoustic_types=4096,
-        acoustic_freq=40.0,  # Hz
-        acoustic_lag=0.2,  # seconds
+        n_semantic_types=9116,
+        n_acoustic_types=65536,
+        semantic_freq=50.0,
+        acoustic_freq=50.0,
+        acoustic_lag=0.2,
+        silence_unit_id=9115,
+        dim=768,
+        n_layers=12,
+        head_dim=64,
+        hidden_dim=3072,
+        n_heads=12,
+        n_kv_heads=12,
+        dropout=0.1,
+        norm_eps=1e-6,
+        rope_theta=10_000.0,
+        force_fp32_attention=False,
     )
-    train_cfg = TrainConfig()
+    train_cfg = TrainConfig(
+        entity="zerospeech",
+        project="zerosyl-acoustic-model",
+        name="ELLA-V-ZeroSylCollapsed-v040-k-9116-neucodec-Emilia-YODAS",
+        device="cuda",
+        dtype=torch.bfloat16,
+        accumulation_steps=4,
+        grad_clip_max_norm=1.0,
+        batch_size=12,
+        num_workers=23,
+        train_segments_dir="/home/nicolvisser/Workspace/zerosyl/output/segments/ZeroSylCollapsed-v040-k-9116/Emilia-YODAS/EN/train",
+        train_segments_manifest_path="/home/nicolvisser/Workspace/zerosyl/output/segments/ZeroSylCollapsed-v040-k-9116/Emilia-YODAS/EN/train/manifest.txt",
+        train_acoustic_units_dir="/home/nicolvisser/Workspace/zerosyl/output/acoustic_units/neucodec/Emilia-YODAS/EN/train",
+        train_acoustic_units_manifest_path="/home/nicolvisser/Workspace/zerosyl/output/acoustic_units/neucodec/Emilia-YODAS/EN/train/manifest.txt",
+        valid_segments_dir="/home/nicolvisser/Workspace/zerosyl/output/segments/ZeroSylCollapsed-v040-k-9116/Emilia-YODAS/EN/dev",
+        valid_segments_manifest_path="/home/nicolvisser/Workspace/zerosyl/output/segments/ZeroSylCollapsed-v040-k-9116/Emilia-YODAS/EN/dev/manifest.txt",
+        valid_acoustic_units_dir="/home/nicolvisser/Workspace/zerosyl/output/acoustic_units/neucodec/Emilia-YODAS/EN/dev",
+        valid_acoustic_units_manifest_path="/home/nicolvisser/Workspace/zerosyl/output/acoustic_units/neucodec/Emilia-YODAS/EN/dev/manifest.txt",
+        lr_init=1e-7,
+        lr_max=5e-4,
+        lr_final=5e-5,
+        n_linear_steps=1600,
+        n_decay_steps=20000 - 1600,
+        betas=(0.9, 0.98),
+        weight_decay=0.01,
+        eps=1e-8,
+    )
     trainer = Trainer(model_cfg, train_cfg)
     trainer.train(
         max_global_step=20000,

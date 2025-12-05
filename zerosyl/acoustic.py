@@ -7,12 +7,7 @@ from typing import Iterable, List, Optional, Tuple
 import torch
 import torch.nn as nn
 from xformers.ops.fmha import memory_efficient_attention
-from xformers.ops.fmha.attn_bias import (
-    AttentionBias,
-    BlockDiagonalCausalMask,
-    BlockDiagonalCausalWithOffsetPaddedKeysMask,
-    BlockDiagonalMask,
-)
+from xformers.ops.fmha.attn_bias import AttentionBias, BlockDiagonalCausalMask
 
 from .utils.misc import is_contiguous
 
@@ -21,9 +16,9 @@ from .utils.misc import is_contiguous
 class AcousticModelConfig:
     n_semantic_types: int
     n_acoustic_types: int
-    semantic_freq: float = 50.0  # Hz
-    acoustic_freq: float = 40.0  # Hz
-    acoustic_lag: float = 0.05  # seconds
+    semantic_freq: float  # Hz
+    acoustic_freq: float  # Hz
+    acoustic_lag: float = 0.0  # seconds
     dim: int = 768
     n_layers: int = 12
     head_dim: int = 64
@@ -89,6 +84,42 @@ class AcousticModel(nn.Module):
         )
         return tokens
 
+    @torch.inference_mode()
+    def generate(
+        self,
+        semantic_units: torch.Tensor,
+        temperature: float = 1.0,
+        top_p: float = 0.85,
+        max_tokens_per_semantic_unit: int = 50,
+    ):
+        tokens = self.tokenize_infer(semantic_units)
+        num_tokens_since_last_semantic_unit = 0
+        semantic_tokens_remaining = tokens[:-1].tolist()
+        generated_ids = tokens.tolist()
+        with torch.inference_mode():
+            while True:
+                current_token = generated_ids[-1]
+                if current_token == self.EOS:
+                    break
+                if len(semantic_tokens_remaining) > 0 and (
+                    current_token == self.BOS
+                    or current_token == self.EOU
+                    or num_tokens_since_last_semantic_unit
+                    >= max_tokens_per_semantic_unit
+                ):
+                    generated_ids.append(semantic_tokens_remaining.pop(0))
+                    num_tokens_since_last_semantic_unit = 0
+                tokens = torch.tensor(generated_ids, dtype=torch.long, device="cuda")
+                logits = self.forward(tokens, [len(tokens)])
+                next_token = sample(
+                    logits[-1], temperature=temperature, top_p=top_p
+                ).item()
+                generated_ids.append(next_token)
+                num_tokens_since_last_semantic_unit += 1
+        tokens = torch.tensor(generated_ids, dtype=torch.long, device="cuda")
+        acoustic_units = self.decode(tokens)
+        return acoustic_units
+
     def tokenize_train(
         self, segments: torch.Tensor, acoustic_units: torch.Tensor
     ) -> torch.Tensor:
@@ -108,6 +139,18 @@ class AcousticModel(nn.Module):
         dtype = segments.dtype
         device = segments.device
         assert dtype == torch.long
+
+        if not is_contiguous(segments):
+            # The segmentation is gappy.
+            # We will override end times with the next-unit start times.
+            segments[:-1, 1] = segments[1:, 0]
+            # We need to do this because in Sylber https://arxiv.org/pdf/2410.07168
+            # there are short gaps between syllables.
+            # If we don't squeeze the acoustic tokens from these gaps within a semantic and EOU token,
+            # then the ELLA-V model does not predict acoustic tokens for those gaps.
+            # This means the starts and ends of syllable with not synthesize correctly.
+            # For long silences, Sylber still gives explicit segments with a silence ID,
+            # so the gaps will usually be very small and timing won't be affected much.
 
         LAG = torch.tensor(self.LAG, dtype=dtype, device=device)
         EOU = torch.tensor(self.EOU, dtype=dtype, device=device)
@@ -151,8 +194,8 @@ class AcousticModel(nn.Module):
 
         # Add a lag to the acoustic data.
         # By allowing a lag from the input to output it gives the model a chance
-        # to "peek" into the future before making predictions about the acoustics.
-        # This is similar to the 'local advance' strategy of ELLA-V
+        # to "peek" into the future before making predictions for the acoustics.
+        # This is similar to the 'local advance' strategy in the ELLA-V paper
         # but with an explicit [LAG] token that the model must predict.
         assert (
             self.cfg.acoustic_lag * self.cfg.acoustic_freq % 1 == 0
@@ -378,25 +421,23 @@ def positions_from_sizes(sizes: Iterable[int], device) -> torch.Tensor:
     )
 
 
-# =============== Cache ===============
+def sample_top_p(probs: torch.Tensor, p: float) -> torch.Tensor:
+    assert 0 <= p <= 1
+
+    probs_sort, probs_idx = torch.sort(probs, dim=-1, descending=True)
+    probs_sum = torch.cumsum(probs_sort, dim=-1)
+    mask = probs_sum - probs_sort > p
+    probs_sort[mask] = 0.0
+    probs_sort.div_(probs_sort.sum(dim=-1, keepdim=True))
+    next_token = torch.multinomial(probs_sort, num_samples=1)
+    return torch.gather(probs_idx, -1, next_token)
 
 
-@dataclass
-class CacheInputMetadata:
-    # rope absolute positions
-    positions: torch.Tensor
-    # where tokens should go in the cache
-    cache_positions: torch.Tensor
+def sample(logits: torch.Tensor, temperature: float, top_p: float) -> torch.Tensor:
+    if temperature > 0:
+        probs = torch.softmax(logits / temperature, dim=-1)
+        next_token = sample_top_p(probs, top_p)
+    else:
+        next_token = torch.argmax(logits, dim=-1).unsqueeze(0)
 
-    # if prefill, use block diagonal causal mask
-    # else use causal with padded key mask
-    prefill: bool
-    mask: AttentionBias
-    seqlens: List[int]
-
-
-def interleave_list(
-    l1: List[torch.Tensor], l2: List[torch.Tensor]
-) -> List[torch.Tensor]:
-    assert len(l1) == len(l2)
-    return [v for pair in zip(l1, l2) for v in pair]
+    return next_token.reshape(-1)

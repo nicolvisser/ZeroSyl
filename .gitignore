@@ -1,5 +1,6 @@
 .env
 .venv
+.python-version
 __pycache__
 checkpoints
 temp
