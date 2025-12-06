@@ -2,7 +2,7 @@ import itertools
 import operator
 from dataclasses import dataclass
 from functools import reduce
-from typing import Iterable, List, Optional, Tuple
+from typing import Iterable
 
 import torch
 import torch.nn as nn
@@ -10,6 +10,8 @@ from xformers.ops.fmha import memory_efficient_attention
 from xformers.ops.fmha.attn_bias import AttentionBias, BlockDiagonalCausalMask
 
 from .utils.misc import is_contiguous
+
+from .cache import CacheView, BufferCache
 
 
 @dataclass
@@ -230,10 +232,10 @@ class AcousticModel(nn.Module):
         acoustic_tokens = tokens[tokens < self.cfg.n_acoustic_types]
         return acoustic_tokens
 
-    def pretty_print_encoding(self, tokens: torch.Tensor) -> List[str]:
+    def pretty_print_encoding(self, tokens: torch.Tensor) -> list[str]:
         str_values = []
         for token in tokens.tolist():
-            if token < self.EOU:
+            if token < self.LAG:
                 str_values.append(f"a{token}")
             elif token == self.LAG:
                 str_values.append("[LAG]")
@@ -259,18 +261,38 @@ class AcousticModel(nn.Module):
             )
         return self._freqs_cis
 
-    def forward(self, input_ids: torch.Tensor, seqlens: List[int]) -> torch.Tensor:
-        assert sum(seqlens) == input_ids.shape[0]
+    def forward(
+        self,
+        input_ids: torch.Tensor,
+        seqlens: int,
+        cache: BufferCache | None = None,
+    ) -> torch.Tensor:
+        
+        if cache is not None:
+            input_metadata = cache.get_input_metadata(seqlens)
+            att_mask = None
+            positions = input_metadata.positions
+        else:
+            assert sum(seqlens) == input_ids.shape[0]
+            att_mask = BlockDiagonalCausalMask.from_seqlens(seqlens)
+            positions = positions_from_sizes(seqlens, self.freqs_cis.device)
 
         h = self.tok_embeddings(input_ids)
-        positions = positions_from_sizes(seqlens, self.freqs_cis.device)
+        
         freqs_cis = self.freqs_cis[positions].to(device=h.device)
-        att_mask = BlockDiagonalCausalMask.from_seqlens(seqlens)
+        
+        for layer_id, layer in enumerate(self.layers):
+            if cache is not None:
+                cache_view = cache.get_view(layer_id, input_metadata)
+            else:
+                cache_view = None
+            h = layer.forward(h, freqs_cis, att_mask, cache_view)
 
-        for layer in self.layers:
-            h = layer(h, freqs_cis, att_mask)
+        if cache is not None:
+            cache.update_seqlens(seqlens)
 
         return self.output(self.norm(h)).float()
+
 
     @classmethod
     def from_pretrained_checkpoint(cls, checkpoint_path: str) -> "AcousticModel":
@@ -297,9 +319,10 @@ class TransformerBlock(nn.Module):
         self,
         x: torch.Tensor,
         freqs_cis: torch.Tensor,
-        att_mask: AttentionBias,
+        att_mask: AttentionBias | None = None,
+        cache: CacheView | None = None,
     ) -> torch.Tensor:
-        r = self.attention(self.attention_norm(x), freqs_cis, att_mask)
+        r = self.attention(self.attention_norm(x), freqs_cis, att_mask, cache)
         h = x + r
         r = self.feed_forward(self.ffn_norm(h))
         return h + r
@@ -322,9 +345,13 @@ class Attention(nn.Module):
         self,
         x: torch.Tensor,
         freqs_cis: torch.Tensor,
-        mask: AttentionBias,
+        mask: AttentionBias | None = None,
+        cache: CacheView | None = None,
     ) -> torch.Tensor:
         seqlen_sum, _ = x.shape
+        assert (
+            (mask is not None) ^ (cache is not None)
+        ), "exactly one of mask and cache should be provided"
 
         xq, xk, xv = self.wq(x), self.wk(x), self.wv(x)
 
@@ -333,7 +360,22 @@ class Attention(nn.Module):
         xv = xv.view(seqlen_sum, self.args.n_kv_heads, self.args.head_dim)
         xq, xk = apply_rotary_emb(xq, xk, freqs_cis=freqs_cis)
 
-        key, val = xk, xv
+
+        if cache is not None:
+            if cache.prefill:
+                key, val = cache.interleave_kv(xk, xv)
+                cache.update(xk, xv)
+            else:
+                cache.update(xk, xv)
+                key, val = cache.key, cache.value
+                key = key.view(
+                    seqlen_sum * cache.max_seq_len, self.args.n_kv_heads, self.args.head_dim
+                )
+                val = val.view(
+                    seqlen_sum * cache.max_seq_len, self.args.n_kv_heads, self.args.head_dim
+                )
+        if mask is not None:
+            key, val = xk, xv
 
         # Repeat keys and values to match number of query heads
         key, val = repeat_kv(key, val, self.repeats, dim=1)
@@ -341,15 +383,10 @@ class Attention(nn.Module):
         # xformers requires (B=1, S, H, D)
         xq, key, val = xq[None, ...], key[None, ...], val[None, ...]
 
-        if self.args.force_fp32_attention:
-            with torch.amp.autocast(device_type="cuda", enabled=False):
-                xq_fp32 = xq.float()
-                key_fp32 = key.float()
-                val_fp32 = val.float()
-                output = memory_efficient_attention(xq_fp32, key_fp32, val_fp32, mask)
-                output = output.to(x.dtype)  # Convert back to original dtype
-        else:
-            output = memory_efficient_attention(xq, key, val, mask)
+        # xformers requires (B=1, S, H, D)
+        output = memory_efficient_attention(
+            xq, key, val, mask if cache is None else cache.mask
+        )
 
         return self.dropout(self.wo(output.view(seqlen_sum, -1)))
 
@@ -382,7 +419,7 @@ class RMSNorm(torch.nn.Module):
 
 
 def precompute_freqs_cis(
-    dim: int, end: int, theta: float, device: Optional[torch.device] = None
+    dim: int, end: int, theta: float, device: torch.device | None = None
 ) -> torch.Tensor:
     freqs = 1.0 / (
         theta ** (torch.arange(0, dim, 2, device=device)[: (dim // 2)].float() / dim)
@@ -396,7 +433,7 @@ def apply_rotary_emb(
     xq: torch.Tensor,
     xk: torch.Tensor,
     freqs_cis: torch.Tensor,
-) -> Tuple[torch.Tensor, torch.Tensor]:
+) -> tuple[torch.Tensor, torch.Tensor]:
     xq_ = torch.view_as_complex(xq.float().reshape(*xq.shape[:-1], -1, 2))
     xk_ = torch.view_as_complex(xk.float().reshape(*xk.shape[:-1], -1, 2))
     freqs_cis = freqs_cis[:, None, :]
@@ -407,7 +444,7 @@ def apply_rotary_emb(
 
 def repeat_kv(
     keys: torch.Tensor, values: torch.Tensor, repeats: int, dim: int
-) -> Tuple[torch.Tensor, torch.Tensor]:
+) -> tuple[torch.Tensor, torch.Tensor]:
     keys = torch.repeat_interleave(keys, repeats=repeats, dim=dim)
     values = torch.repeat_interleave(values, repeats=repeats, dim=dim)
     return keys, values
