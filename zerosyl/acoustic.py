@@ -9,9 +9,8 @@ import torch.nn as nn
 from xformers.ops.fmha import memory_efficient_attention
 from xformers.ops.fmha.attn_bias import AttentionBias, BlockDiagonalCausalMask
 
+from .cache import BufferCache, CacheView
 from .utils.misc import is_contiguous
-
-from .cache import CacheView, BufferCache
 
 
 @dataclass
@@ -75,52 +74,86 @@ class AcousticModel(nn.Module):
     def semantic_offset(self) -> int:
         return self.cfg.n_acoustic_types + 4
 
-    def tokenize_infer(self, semantic_units: torch.Tensor) -> torch.Tensor:
-        tokens = torch.cat(
-            [
-                semantic_units.long() + self.semantic_offset,
-                torch.tensor(
-                    [self.BOS], dtype=torch.long, device=semantic_units.device
-                ),
-            ]
-        )
-        return tokens
-
-    @torch.inference_mode()
     def generate(
         self,
         semantic_units: torch.Tensor,
         temperature: float = 1.0,
         top_p: float = 0.85,
-        max_tokens_per_semantic_unit: int = 50,
+        max_tokens_per_semantic_unit: int = 20,
+        max_tokens: int = 2000,
     ):
-        tokens = self.tokenize_infer(semantic_units)
-        num_tokens_since_last_semantic_unit = 0
-        semantic_tokens_remaining = tokens[:-1].tolist()
-        generated_ids = tokens.tolist()
+        msg = "semntic_units must be a 1D torch.Tensor"
+        assert isinstance(semantic_units, torch.Tensor), msg
+        assert semantic_units.ndim == 1, msg
+
+        semantic_tokens = semantic_units + self.semantic_offset
+        encoded_prompt = torch.cat(
+            [
+                semantic_tokens,
+                torch.tensor(
+                    [self.BOS],
+                    dtype=torch.long,
+                    device="cuda",
+                ),
+            ]
+        )
+
+        cache_window = len(encoded_prompt) + max_tokens
+        cache = BufferCache(
+            n_layers=self.cfg.n_layers,
+            max_batch_size=1,
+            max_seq_len=cache_window,
+            n_kv_heads=self.cfg.n_kv_heads,
+            head_dim=self.cfg.head_dim,
+        )
+        cache.to(device="cuda", dtype=torch.float32)
+        cache.reset()
+
         with torch.inference_mode():
-            while True:
-                current_token = generated_ids[-1]
-                if current_token == self.EOS:
-                    break
-                if len(semantic_tokens_remaining) > 0 and (
-                    current_token == self.BOS
-                    or current_token == self.EOU
-                    or num_tokens_since_last_semantic_unit
-                    >= max_tokens_per_semantic_unit
-                ):
-                    generated_ids.append(semantic_tokens_remaining.pop(0))
-                    num_tokens_since_last_semantic_unit = 0
-                tokens = torch.tensor(generated_ids, dtype=torch.long, device="cuda")
-                logits = self.forward(tokens, [len(tokens)])
-                next_token = sample(
-                    logits[-1], temperature=temperature, top_p=top_p
-                ).item()
-                generated_ids.append(next_token)
-                num_tokens_since_last_semantic_unit += 1
-        tokens = torch.tensor(generated_ids, dtype=torch.long, device="cuda")
-        acoustic_units = self.decode(tokens)
-        return acoustic_units
+            prelogits: torch.Tensor = self(
+                encoded_prompt,
+                seqlens=[len(encoded_prompt)],
+                cache=cache,
+            )
+
+        logits = prelogits[-1:, :]
+
+        logits
+        del prelogits
+
+        force_semantic_next = True
+        cur_semantic_idx = 0
+        max_semantic_idx = len(semantic_tokens) - 1
+        num_tokens_since_semantic = 0
+        generated_tokens = []
+
+        for _ in range(max_tokens):
+
+            sampled_token = sample(logits, temperature, top_p)
+
+            if force_semantic_next:
+                sampled_token = semantic_tokens[cur_semantic_idx].unsqueeze(0)
+                cur_semantic_idx += 1
+                num_tokens_since_semantic = -1
+
+            generated_tokens.append(sampled_token.squeeze().item())
+            num_tokens_since_semantic += 1
+
+            if generated_tokens[-1] == self.EOS:
+                break
+
+            force_semantic_next = (
+                (generated_tokens[-1] == self.EOU)
+                or (num_tokens_since_semantic >= max_tokens_per_semantic_unit)
+            ) and (cur_semantic_idx <= max_semantic_idx)
+
+            with torch.inference_mode():
+                logits = self(sampled_token, seqlens=[1], cache=cache)
+
+        acoustic_tokens = [t for t in generated_tokens if t < self.cfg.n_acoustic_types]
+        acoustic_tokens = torch.tensor(acoustic_tokens, dtype=torch.long, device="cuda")
+
+        return acoustic_tokens
 
     def tokenize_train(
         self, segments: torch.Tensor, acoustic_units: torch.Tensor
@@ -267,7 +300,7 @@ class AcousticModel(nn.Module):
         seqlens: int,
         cache: BufferCache | None = None,
     ) -> torch.Tensor:
-        
+
         if cache is not None:
             input_metadata = cache.get_input_metadata(seqlens)
             att_mask = None
@@ -278,21 +311,20 @@ class AcousticModel(nn.Module):
             positions = positions_from_sizes(seqlens, self.freqs_cis.device)
 
         h = self.tok_embeddings(input_ids)
-        
+
         freqs_cis = self.freqs_cis[positions].to(device=h.device)
-        
+
         for layer_id, layer in enumerate(self.layers):
             if cache is not None:
                 cache_view = cache.get_view(layer_id, input_metadata)
             else:
                 cache_view = None
-            h = layer.forward(h, freqs_cis, att_mask, cache_view)
+            h = layer(h, freqs_cis, att_mask, cache_view)
 
         if cache is not None:
             cache.update_seqlens(seqlens)
 
         return self.output(self.norm(h)).float()
-
 
     @classmethod
     def from_pretrained_checkpoint(cls, checkpoint_path: str) -> "AcousticModel":
@@ -303,6 +335,18 @@ class AcousticModel(nn.Module):
         model.eval()
         params = sum(p.numel() for p in model.parameters())
         print(f"AcousticModel loaded with {params:,} parameters")
+        return model
+
+    @classmethod
+    def from_remote(
+        cls,
+        url: str = "https://storage.googleapis.com/zerospeech-checkpoints/ELLA-V-ZeroSylCollapsed-v040-k-9116-neucodec-LibriSpeech-train-clean-460.pt",
+    ) -> "AcousticModel":
+        checkpoint = torch.hub.load_state_dict_from_url(url)
+        cfg = AcousticModelConfig(**checkpoint["cfg"])
+        model = cls(cfg)
+        model.load_state_dict(checkpoint["model"], strict=True)
+        model.eval()
         return model
 
 
@@ -349,8 +393,8 @@ class Attention(nn.Module):
         cache: CacheView | None = None,
     ) -> torch.Tensor:
         seqlen_sum, _ = x.shape
-        assert (
-            (mask is not None) ^ (cache is not None)
+        assert (mask is not None) ^ (
+            cache is not None
         ), "exactly one of mask and cache should be provided"
 
         xq, xk, xv = self.wq(x), self.wk(x), self.wv(x)
@@ -360,7 +404,6 @@ class Attention(nn.Module):
         xv = xv.view(seqlen_sum, self.args.n_kv_heads, self.args.head_dim)
         xq, xk = apply_rotary_emb(xq, xk, freqs_cis=freqs_cis)
 
-
         if cache is not None:
             if cache.prefill:
                 key, val = cache.interleave_kv(xk, xv)
@@ -369,10 +412,14 @@ class Attention(nn.Module):
                 cache.update(xk, xv)
                 key, val = cache.key, cache.value
                 key = key.view(
-                    seqlen_sum * cache.max_seq_len, self.args.n_kv_heads, self.args.head_dim
+                    seqlen_sum * cache.max_seq_len,
+                    self.args.n_kv_heads,
+                    self.args.head_dim,
                 )
                 val = val.view(
-                    seqlen_sum * cache.max_seq_len, self.args.n_kv_heads, self.args.head_dim
+                    seqlen_sum * cache.max_seq_len,
+                    self.args.n_kv_heads,
+                    self.args.head_dim,
                 )
         if mask is not None:
             key, val = xk, xv

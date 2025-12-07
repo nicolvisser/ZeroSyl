@@ -3,10 +3,11 @@ from pathlib import Path
 import torch
 from IPython.display import Audio, display
 from neucodec import DistillNeuCodec
-from tqdm import tqdm
-from zerosyl.cache import BufferCache
-from zerosyl.acoustic import AcousticModel
 from torch.nn.utils.rnn import pad_sequence
+from tqdm import tqdm
+
+from zerosyl.acoustic import AcousticModel
+from zerosyl.cache import BufferCache
 
 # fmt: off
 

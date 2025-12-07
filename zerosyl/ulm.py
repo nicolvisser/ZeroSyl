@@ -75,15 +75,15 @@ class ULM(nn.Module):
         return self.output(self.norm(h)).float()
 
     @torch.inference_mode()
-    def loglikelihood(self, ids: torch.Tensor) -> float:
+    def loglikelihood(self, ids: torch.Tensor, tokenize: bool = True) -> float:
         assert ids.ndim == 1, "ids must be a 1D tensor"
-        device = ids.device
-        input_ids = ids[:-1].clone().to(device)
-        target_ids = ids[1:].clone().to(device)
-        logits = self.forward(input_ids, [len(input_ids)])
+        tokens = self.tokenize(ids) if tokenize else ids
+        input_tokens = tokens[:-1].clone()
+        target_tokens = tokens[1:].clone()
+        logits = self.forward(input_tokens, [len(input_tokens)])
         neg_obs_log_probs = torch.nn.functional.cross_entropy(
             logits,
-            target_ids,
+            target_tokens,
             reduction="none",
         )
         ll = -neg_obs_log_probs.sum().item()
@@ -111,6 +111,18 @@ class ULM(nn.Module):
         model.eval()
         params = sum(p.numel() for p in model.parameters())
         print(f"ULM loaded with {params:,} parameters")
+        return model
+
+    @classmethod
+    def from_remote(
+        cls,
+        url: str = "https://storage.googleapis.com/zerospeech-checkpoints/ULM-Base-ZeroSylCollapsed-v040-k-9116-LibriLight-60k.pt",
+    ) -> "ULM":
+        checkpoint = torch.hub.load_state_dict_from_url(url)
+        cfg = ULMConfig(**checkpoint["cfg"])
+        model = cls(cfg)
+        model.load_state_dict(checkpoint["model"])
+        model.eval()
         return model
 
 
