@@ -96,8 +96,8 @@ class ULM(nn.Module):
         state_dict = self.state_dict()
         torch.save(
             {
-                "model_args": self.cfg.to_dict(),
-                "model_state_dict": state_dict,
+                "cfg": self.cfg.__dict__,
+                "model": state_dict,
             },
             checkpoint_path,
         )

@@ -6,11 +6,23 @@ from typing import Iterable
 
 import torch
 import torch.nn as nn
+from torch.nn.utils.rnn import pad_sequence
 from xformers.ops.fmha import memory_efficient_attention
 from xformers.ops.fmha.attn_bias import AttentionBias, BlockDiagonalCausalMask
 
 from .cache import BufferCache, CacheView
-from .utils.misc import is_contiguous
+
+
+def is_contiguous(segments: torch.Tensor):
+    """
+    Determine whether a segmenation is contiguous (True) or gappy (False).
+        segments[:, 0] = start times
+        segments[:, 1] = end times
+        segments[:, 2] = predicted id
+    """
+    ends = segments[:-1, 1]
+    next_starts = segments[1:, 0]
+    return torch.all(ends == next_starts).item()
 
 
 @dataclass
@@ -76,84 +88,158 @@ class AcousticModel(nn.Module):
 
     def generate(
         self,
-        semantic_units: torch.Tensor,
+        semantic_units_list: list[torch.Tensor],
         temperature: float = 1.0,
         top_p: float = 0.85,
         max_tokens_per_semantic_unit: int = 20,
         max_tokens: int = 2000,
+        show_progress: bool = False,
+        return_finished_list: bool = False,
     ):
-        msg = "semntic_units must be a 1D torch.Tensor"
-        assert isinstance(semantic_units, torch.Tensor), msg
-        assert semantic_units.ndim == 1, msg
+        # check for correct input
+        msg = "semantic_units must be a python list of 1D long tensors"
+        assert isinstance(semantic_units_list, list)
+        assert len(semantic_units_list) > 0, msg
+        for semantic_units in semantic_units_list:
+            assert isinstance(semantic_units, torch.Tensor), msg
+            assert semantic_units.dtype == torch.long
+            assert semantic_units.ndim == 1
 
-        semantic_tokens = semantic_units + self.semantic_offset
-        encoded_prompt = torch.cat(
-            [
-                semantic_tokens,
-                torch.tensor(
-                    [self.BOS],
-                    dtype=torch.long,
-                    device="cuda",
-                ),
-            ]
-        )
+        bool_kwargs = {"dtype": torch.bool, "device": "cuda"}
+        long_kwargs = {"dtype": torch.long, "device": "cuda"}
+        float_kwargs = {"dtype": torch.float, "device": "cuda"}
 
-        cache_window = len(encoded_prompt) + max_tokens
+        batch_size = len(semantic_units_list)
+
+        semantic_list = []
+        semantic_lengths = []
+        prompt_list = []
+        prompt_lengths = []
+        for semantic_units in semantic_units_list:
+            semantic = semantic_units + self.semantic_offset
+            prompt = torch.cat(
+                [
+                    semantic.cuda(),
+                    torch.tensor([self.BOS], **long_kwargs),
+                ]
+            )
+
+            semantic_list.append(semantic)
+            semantic_lengths.append(len(semantic))
+            prompt_list.append(prompt)
+            prompt_lengths.append(len(prompt))
+
+        cache_window = len(prompt) + max_tokens
         cache = BufferCache(
             n_layers=self.cfg.n_layers,
-            max_batch_size=1,
+            max_batch_size=batch_size,
             max_seq_len=cache_window,
             n_kv_heads=self.cfg.n_kv_heads,
             head_dim=self.cfg.head_dim,
-        )
-        cache.to(device="cuda", dtype=torch.float32)
+        ).to(**float_kwargs)
         cache.reset()
 
+        # do a single forward pass on all the prompts
         with torch.inference_mode():
-            prelogits: torch.Tensor = self(
-                encoded_prompt,
-                seqlens=[len(encoded_prompt)],
+            logits: torch.Tensor = self(
+                torch.cat(prompt_list, dim=0),
+                seqlens=prompt_lengths,
                 cache=cache,
             )
+        # select the last token logits
+        logits = logits.index_select(
+            dim=0,
+            index=torch.tensor(prompt_lengths, **long_kwargs).cumsum(dim=0) - 1,
+        )  # (batch_size, vocab_size)
 
-        logits = prelogits[-1:, :]
+        torch.cuda.empty_cache()
 
-        logits
-        del prelogits
+        # bookkeeping for forcing semantic token after EOU token:
+        semantic_tokens_padded = pad_sequence(semantic_list, batch_first=True)
+        semantic_tokens_padded = semantic_tokens_padded.to(**long_kwargs)
+        force_semantic_next = torch.ones((batch_size,), **bool_kwargs)
+        cur_semantic_idx = torch.zeros((batch_size,), **long_kwargs)
+        max_semantic_idx = torch.tensor(prompt_lengths, **long_kwargs) - 1
+        num_tokens_since_semantic = torch.zeros((batch_size,), **long_kwargs)
 
-        force_semantic_next = True
-        cur_semantic_idx = 0
-        max_semantic_idx = len(semantic_tokens) - 1
-        num_tokens_since_semantic = 0
-        generated_tokens = []
+        # bookkeeping for forcing EOS tokes
+        force_EOS_next = torch.zeros((batch_size,), **bool_kwargs)
+
+        # will gather sampled tokens here
+        generated_tokens_list = []
+
+        # Initialize progress bar
+        if show_progress:
+            from tqdm import tqdm
+
+            progress_bar = tqdm(total=max(semantic_lengths))
 
         for _ in range(max_tokens):
 
             sampled_token = sample(logits, temperature, top_p)
 
-            if force_semantic_next:
-                sampled_token = semantic_tokens[cur_semantic_idx].unsqueeze(0)
-                cur_semantic_idx += 1
-                num_tokens_since_semantic = -1
+            # apply semantic token forcing
+            if force_semantic_next.any():
+                # override by placing next semantic token
+                sampled_token[force_semantic_next] = semantic_tokens_padded[
+                    force_semantic_next, cur_semantic_idx[force_semantic_next]
+                ]
+                # advance the pointers to next semantic unit
+                cur_semantic_idx[force_semantic_next] += 1
+                # reset the duration counter
+                num_tokens_since_semantic[force_semantic_next] = -1
 
-            generated_tokens.append(sampled_token.squeeze().item())
+            # apply EOS token forcing
+            sampled_token[force_EOS_next] = self.EOS
+
+            # collect generated tokens
+            generated_tokens_list.append(sampled_token.tolist())
             num_tokens_since_semantic += 1
 
-            if generated_tokens[-1] == self.EOS:
+            if show_progress:
+                progress_bar_remaining = progress_bar.total - progress_bar.n
+                actual_remaining = (max_semantic_idx - cur_semantic_idx).max().item()
+                progress_bar.update(progress_bar_remaining - actual_remaining)
+
+            # detect conditions for next iteration
+            force_EOS_next = (sampled_token == self.EOS) | (force_EOS_next)
+
+            if torch.all(force_EOS_next):
                 break
 
             force_semantic_next = (
-                (generated_tokens[-1] == self.EOU)
-                or (num_tokens_since_semantic >= max_tokens_per_semantic_unit)
-            ) and (cur_semantic_idx <= max_semantic_idx)
+                (
+                    (sampled_token == self.EOU)
+                    | (num_tokens_since_semantic >= max_tokens_per_semantic_unit)
+                )
+                & (cur_semantic_idx < max_semantic_idx)
+                & (~force_EOS_next)
+            )
 
+            # otherwise make another forward pass using the newly sampled (or forced) tokens
             with torch.inference_mode():
-                logits = self(sampled_token, seqlens=[1], cache=cache)
+                logits = self(sampled_token, seqlens=[1] * batch_size, cache=cache)
 
-        acoustic_tokens = [t for t in generated_tokens if t < self.cfg.n_acoustic_types]
-        acoustic_tokens = torch.tensor(acoustic_tokens, dtype=torch.long, device="cuda")
+        if not force_EOS_next.all() and not return_finished_list:
+            print(
+                "Some items in the batch did not generate fully. Increase max_tokens."
+            )
 
-        return acoustic_tokens
+        generated_tokens_list = list(zip(*generated_tokens_list))
+
+        acoustic_tokens_list = []
+        for generated_tokens in generated_tokens_list:
+            acoustic_tokens = [
+                t for t in generated_tokens if t < self.cfg.n_acoustic_types
+            ]
+            acoustic_tokens = torch.tensor(acoustic_tokens, **long_kwargs)
+
+            acoustic_tokens_list.append(acoustic_tokens)
+
+        if return_finished_list:
+            return acoustic_tokens_list, force_EOS_next.tolist()
+
+        return acoustic_tokens_list
 
     def tokenize_train(
         self, segments: torch.Tensor, acoustic_units: torch.Tensor
