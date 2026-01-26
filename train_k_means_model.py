@@ -7,11 +7,11 @@ from sklearn.cluster import kmeans_plusplus
 from torchcodec.decoders import AudioDecoder
 from tqdm.autonotebook import tqdm
 
-from zerosyl.model import ZeroSylBase
+from zerosyl.encoder import ZeroSylContinuous
 
 checkpoint_path = Path("checkpoints/WavLM-Large.pt")
-waveform_dir = Path("/mnt/wsl/newt/datasets/LibriSpeech")
-output_dir = Path("checkpoints/kmeans-layer-13-win-3-prom_045")
+waveform_dir = Path("/home/nicolvisser/Data/waveforms/LibriSpeech")
+output_dir = Path("checkpoints/zerosyl-kmeans-v040")
 num_clusters = 10000
 
 assert checkpoint_path.exists()
@@ -19,14 +19,14 @@ assert waveform_dir.exists()
 waveform_paths = list(waveform_dir.glob("train-clean-100/**/*.flac"))
 assert len(waveform_paths) > 0
 
-model = ZeroSylBase.from_pretrained_checkpoint(checkpoint_path).cuda()
+model = ZeroSylContinuous.from_pretrained_checkpoint(checkpoint_path).cuda()
 
 all_embeddings = []
 
 for waveform_path in tqdm(waveform_paths):
     decoder = AudioDecoder(waveform_path, sample_rate=16000, num_channels=1)
     audio = decoder.get_all_samples()
-    embeddings, starts, ends = model.segment(audio.data.cuda())
+    starts, ends, embeddings = model.encode(audio.data.cuda())
     all_embeddings.append(embeddings.cpu().numpy())
 
 all_embeddings = np.concat(all_embeddings, axis=0)

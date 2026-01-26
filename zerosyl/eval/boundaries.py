@@ -1,7 +1,91 @@
 import itertools
+from pathlib import Path
 from typing import List, Tuple
 
 import numpy as np
+import tgt
+import torch
+from rich.progress import track
+
+
+def evaluate_boundary_metrics(
+    segments_dir: str | Path,
+    textgrid_dir: str | Path,
+    segments_pattern: str = "dev*/**/*.pt",
+    textgrid_pattern: str = "dev*/**/*.TextGrid",
+    frame_rate: float = 50.0,
+    constant_shift: float = 0.0,
+    tolerance: float = 0.05,
+):
+    segments_dir = Path(segments_dir)
+    textgrid_dir = Path(textgrid_dir)
+
+    segments_paths = sorted(segments_dir.glob(segments_pattern))
+    textgrid_paths = sorted(textgrid_dir.glob(textgrid_pattern))
+
+    assert len(segments_paths) > 0
+    assert len(textgrid_paths) > 0
+    assert len(segments_paths) == len(textgrid_paths)
+    for sp, tp in zip(segments_paths, textgrid_paths):
+        assert sp.stem == tp.stem
+
+    segs, refs = [], []
+
+    for sp, tp in track(
+        zip(segments_paths, textgrid_paths),
+        description="Calculating...",
+        total=len(segments_paths),
+    ):
+        segments = torch.load(sp)
+        textgrid = tgt.read_textgrid(tp, include_empty_intervals=True)
+
+        starts, ends, _ = segments.T
+        boundaries = starts.tolist() + ends.tolist()[-1:]
+        boundaries = [round(b / frame_rate + constant_shift, 2) for b in boundaries]
+
+        seg, ref = split_utterance(
+            boundaries,
+            textgrid.get_tier_by_name("syllables"),
+            tolerance=tolerance,
+        )
+        segs.extend(seg)
+        refs.extend(ref)
+
+    # -------------- Calculate boundary evaluation metrics --------------
+
+    precision, recall, f1 = eval_boundaries(segs, refs, tolerance=tolerance)
+
+    os = get_os(precision, recall)
+
+    rvalue = get_rvalue(precision, recall)
+
+    token_precision, token_recall, token_f1 = eval_token_boundaries(
+        segs, refs, tolerance=tolerance
+    )
+
+    return (precision, recall, f1, os, rvalue, token_precision, token_recall, token_f1)
+
+
+def split_utterance(
+    seg: List[float], ref: tgt.IntervalTier, tolerance: float
+) -> Tuple[List[List[float]], List[List[float]]]:
+
+    ref_out = [
+        list(ref_utt)
+        for k, ref_utt in itertools.groupby(ref.intervals, lambda x: x.text != "")
+        if k
+    ]
+
+    seg_out = []
+    for ref_utt in ref_out:
+        ref_utt_onset = ref_utt[0].start_time + tolerance
+        ref_utt_offset = ref_utt[-1].end_time - tolerance
+        seg_out.append([s for s in seg if ref_utt_onset < s < ref_utt_offset])
+        seg_out[-1].append(ref_utt[-1].end_time)
+
+    return seg_out, [
+        [float(interval.end_time) for interval in ref_utt] for ref_utt in ref_out
+    ]
 
 
 def get_p_r_f1(n_seg: int, n_ref: int, n_hit: int) -> Tuple[float, float, float]:
