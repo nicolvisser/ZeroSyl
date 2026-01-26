@@ -52,6 +52,7 @@ def compute_loglikelihoods(
     batch_size: int = 64,
     num_workers: int = 8,
     segments_pattern: str = "*.pt",
+    normalize=False,
 ):
     if checkpoint_path is None:
         model = ULM.from_remote().cuda()
@@ -95,6 +96,8 @@ def compute_loglikelihoods(
 
             for key, start, stop in zip(keys, starts, stops):
                 ll = -neg_obs_log_probs[start:stop].sum().item()
+                if normalize:
+                    ll /= stop - start
                 data.append((key, ll))
 
     strings = [f"{key} {ll}" for key, ll in data]

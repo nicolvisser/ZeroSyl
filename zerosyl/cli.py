@@ -268,6 +268,9 @@ def loglikelihood(
     segments_pattern: str = typer.Option(
         "*.pt", help="Glob pattern to match segment files."
     ),
+    normalize: bool = typer.Option(
+        False, "--normalize", help="Normalize the loglikelihoods by token count"
+    ),
 ):
     """
     Compute log-likelihoods for a directory of unit segment files using a ULM checkpoint.
@@ -289,4 +292,5 @@ def loglikelihood(
         batch_size=batch_size,
         num_workers=num_workers,
         segments_pattern=segments_pattern,
+        normalize=normalize,
     )
