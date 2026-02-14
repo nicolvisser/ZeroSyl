@@ -7,12 +7,26 @@ import numpy as np
 import torch
 import wandb
 from torch import amp, nn, optim
+from torch.nn.utils.rnn import pad_sequence
 from torch.optim.lr_scheduler import LRScheduler
 from torch.optim.optimizer import Optimizer
 from torch.utils.data import DataLoader, Dataset
 from tqdm.autonotebook import tqdm
+from transformers import OPTConfig, OPTForCausalLM
 
-from zerosyl.ulm import ULM, ULMConfig
+VOCAB_SIZE = 9116
+BOS_ID = VOCAB_SIZE
+PAD_ID = VOCAB_SIZE + 1
+
+
+def tokenize(units: torch.Tensor) -> torch.Tensor:
+    tokens = torch.cat(
+        [
+            torch.tensor([BOS_ID], dtype=torch.long, device=units.device),
+            units.long(),
+        ]
+    )
+    return tokens
 
 
 @dataclass
@@ -22,7 +36,7 @@ class TrainConfig:
     project: str
     name: str
 
-    # --- General training control --
+    # --- General training control ---
     device: str
     dtype: torch.dtype
     accumulation_steps: int
@@ -31,9 +45,7 @@ class TrainConfig:
     num_workers: int
 
     # --- Data configuration ---
-    train_segments_dir: str
-    train_segments_pattern: str
-
+    train_mmap_path: str
     valid_segments_dir: str
     valid_segments_pattern: str
 
@@ -51,24 +63,33 @@ class TrainConfig:
     eps: float
 
 
-class UnitsDatasetFromSegments(Dataset):
+class TokenizedUnitsChunkedMMapDataset(Dataset):
     def __init__(
         self,
-        segments_dir: str,
-        pattern: str = "**/*.pt",
+        mmap_data_path: str,
+        mmap_dtype: np.dtype,
+        chunk_size: int,
+        tokenize_fn: Callable,
     ):
-        self.segments_paths = sorted(list(Path(segments_dir).glob(pattern)))
-        assert len(self.segments_paths) > 0, "No segment files found"
 
-    def __len__(self) -> int:
-        return len(self.segments_paths)
+        self.mmap = np.memmap(mmap_data_path, dtype=mmap_dtype, mode="r")
+        assert self.mmap.ndim == 1
+        self.tokenize_fn = tokenize_fn
+        self.chunk_size = chunk_size
 
-    def __getitem__(self, idx: int) -> Tuple[int, torch.Tensor]:
-        segments_path = self.segments_paths[idx]
-        chapter_id = segments_path.parent.name
-        segments = torch.load(segments_path).long()  # (T,3) (starts, stops, ids)
-        units = segments[:, 2]
-        return chapter_id, units
+    def __len__(self):
+        return self.mmap.shape[0] // self.chunk_size
+
+    def __getitem__(self, index):
+        if index >= len(self):
+            raise IndexError
+        max_start = len(self.mmap) - self.chunk_size
+        start = np.random.randint(0, max_start)
+        units = self.mmap[start : start + self.chunk_size]
+        units = units.astype(np.long)
+        units = torch.from_numpy(units)
+        tokens = self.tokenize_fn(units)
+        return tokens
 
 
 class TokenizedUnitsUtteranceDataset(Dataset):
@@ -78,61 +99,18 @@ class TokenizedUnitsUtteranceDataset(Dataset):
         tokenize_fn: Callable,
         pattern: str = "**/*.pt",
     ):
-        self.dataset = UnitsDatasetFromSegments(segments_dir, pattern)
+        self.segments_paths = sorted(list(Path(segments_dir).glob(pattern)))
+        assert len(self.segments_paths) > 0, "No segment files found"
         self.tokenize_fn = tokenize_fn
 
     def __len__(self) -> int:
-        return len(self.dataset)
+        return len(self.segments_paths)
 
     def __getitem__(self, idx: int) -> torch.Tensor:
-        _, units = self.dataset[idx]
+        segments_path = self.segments_paths[idx]
+        segments = torch.load(segments_path).long()
+        units = segments[:, 2]
         tokens = self.tokenize_fn(units)
-        return tokens
-
-
-class TokenizedUnitsChunkedDataset(Dataset):
-    def __init__(
-        self,
-        segments_dir: str,
-        tokenize_fn: Callable,
-        pattern: str = "**/*.pt",
-        max_chunk_size: int = 256,
-    ):
-        self.dataset = UnitsDatasetFromSegments(segments_dir, pattern)
-        self.tokenize_fn = tokenize_fn
-        self.chunk_size = max_chunk_size
-
-    def __len__(self) -> int:
-        return len(self.dataset)
-
-    def __getitem__(self, idx: int) -> torch.Tensor:
-        units_list = []
-        num_units = 0
-
-        # add first sequence with random starting point
-        chapter_id, units = self.dataset[idx]
-        start_idx = np.random.randint(0, len(units))
-        units_list.append(units[start_idx:])
-        num_units += len(units[start_idx:])
-        idx += 1
-
-        # if chunk size is not reached, try adding next items from the same chapter
-        while num_units < self.chunk_size:
-            if idx >= len(self.dataset):
-                break
-            next_chapter_id, units = self.dataset[idx]
-            if next_chapter_id != chapter_id:
-                # no tokens left in chapter
-                break
-            units_list.append(units)
-            num_units += len(units)
-            idx += 1
-
-        units = torch.cat(units_list, dim=0)
-        units = units[: self.chunk_size]
-
-        tokens = self.tokenize_fn(units)
-
         return tokens
 
 
@@ -141,11 +119,9 @@ def collate_fn(
 ) -> Tuple[torch.Tensor, torch.Tensor, List[int]]:
     src_tokens = [toks[:-1] for toks in tokens]
     tgt_tokens = [toks[1:] for toks in tokens]
-    seqlens = [len(toks) for toks in src_tokens]
-    src_tokens = torch.cat(src_tokens, dim=0)
-    tgt_tokens = torch.cat(tgt_tokens, dim=0)
-    assert sum(seqlens) == src_tokens.size(0)
-    return src_tokens, tgt_tokens, seqlens
+    src_tokens = pad_sequence(src_tokens, batch_first=True, padding_value=PAD_ID)
+    tgt_tokens = pad_sequence(tgt_tokens, batch_first=True, padding_value=PAD_ID)
+    return src_tokens, tgt_tokens
 
 
 class LinearRampCosineDecayScheduler(LRScheduler):
@@ -204,11 +180,11 @@ class LinearRampCosineDecayScheduler(LRScheduler):
 
 
 class Trainer:
-    def __init__(self, model_cfg: ULMConfig, train_cfg: TrainConfig):
+    def __init__(self, model_cfg: OPTConfig, train_cfg: TrainConfig):
         self.model_cfg = model_cfg
         self.train_cfg = train_cfg
 
-        self.model = ULM(model_cfg).to(self.train_cfg.device)
+        self.model = OPTForCausalLM(model_cfg).to(self.train_cfg.device)
 
         # initialize optimizer with training config lr and params
         self.optimizer = optim.AdamW(
@@ -233,15 +209,15 @@ class Trainer:
             torch.amp.GradScaler() if self.train_cfg.dtype == torch.float16 else None
         )
 
-        train_dataset = TokenizedUnitsChunkedDataset(
-            segments_dir=train_cfg.train_segments_dir,
-            tokenize_fn=self.model.tokenize,
-            pattern=train_cfg.train_segments_pattern,
-            max_chunk_size=train_cfg.train_ctx_win_size,
+        train_dataset = TokenizedUnitsChunkedMMapDataset(
+            mmap_data_path=train_cfg.train_mmap_path,
+            mmap_dtype=np.uint16,
+            chunk_size=train_cfg.train_ctx_win_size,
+            tokenize_fn=tokenize,
         )
         valid_dataset = TokenizedUnitsUtteranceDataset(
             segments_dir=train_cfg.valid_segments_dir,
-            tokenize_fn=self.model.tokenize,
+            tokenize_fn=tokenize,
             pattern=train_cfg.valid_segments_pattern,
         )
         self.train_loader = DataLoader(
@@ -278,20 +254,31 @@ class Trainer:
         self.pbar = None
 
     def train_step(self, batch):
-        src_tokens, tgt_tokens, seqlens = batch
-        src_tokens = src_tokens.to(self.train_cfg.device)
-        tgt_tokens = tgt_tokens.to(self.train_cfg.device)
-        logits = self.model.forward(src_tokens, seqlens)
-        loss = torch.nn.functional.cross_entropy(logits, tgt_tokens)
+        src_tokens, tgt_tokens = batch
+        src_tokens = src_tokens.to(self.train_cfg.device)  # (B,L)
+        tgt_tokens = tgt_tokens.to(self.train_cfg.device)  # (B,L)
+        logits = self.model.forward(src_tokens).logits  # # (B, L, V)
+        loss = torch.nn.functional.cross_entropy(
+            logits.view(-1, logits.size(-1)),
+            tgt_tokens.view(-1),
+            ignore_index=PAD_ID,
+        )
         return loss
 
     def valid_step(self, batch):
-        src_tokens, tgt_tokens, seqlens = batch
+        src_tokens, tgt_tokens = batch
         src_tokens = src_tokens.to(self.train_cfg.device)
         tgt_tokens = tgt_tokens.to(self.train_cfg.device)
-        logits = self.model.forward(src_tokens, seqlens)
-        loss = torch.nn.functional.cross_entropy(logits, tgt_tokens)
-        accuracy = (logits.argmax(-1) == tgt_tokens).float().mean()
+        logits = self.model.forward(src_tokens).logits
+        loss = torch.nn.functional.cross_entropy(
+            logits.view(-1, logits.size(-1)),
+            tgt_tokens.view(-1),
+            ignore_index=PAD_ID,
+        )
+        preds = logits.argmax(dim=-1)
+        mask = tgt_tokens != PAD_ID
+        correct = (preds == tgt_tokens) & mask
+        accuracy = correct.sum() / mask.sum()
         return loss, accuracy
 
     def train_epoch(self):
@@ -367,7 +354,7 @@ class Trainer:
             checkpoint_path = Path(self.run.dir) / f"best.pt"
             checkpoint = {
                 "model": self.model.state_dict(),
-                "cfg": self.model.cfg.__dict__,
+                "cfg": self.model.config.__dict__,
             }
             Path(checkpoint_path).parent.mkdir(parents=True, exist_ok=True)
             torch.save(checkpoint, checkpoint_path)
@@ -430,7 +417,7 @@ class Trainer:
                     )
                     checkpoint = {
                         "model": self.model.state_dict(),
-                        "cfg": self.model.cfg.__dict__,
+                        "cfg": self.model.config.__dict__,
                     }
                     Path(checkpoint_path).parent.mkdir(parents=True, exist_ok=True)
                     torch.save(checkpoint, checkpoint_path)
@@ -442,39 +429,50 @@ class Trainer:
 if __name__ == "__main__":
     torch.set_float32_matmul_precision("high")
 
-    model_cfg = ULMConfig(
-        vocab_size=9116,
-        dim=768,
-        n_layers=12,
-        head_dim=64,
-        hidden_dim=4 * 768,
-        n_heads=12,
-        n_kv_heads=12,
-        dropout=0.1,
-        norm_eps=1e-6,
-        rope_theta=10000.0,
+    model_cfg = OPTConfig(
+        **{
+            "vocab_size": VOCAB_SIZE + 2,
+            "hidden_size": 768,
+            "num_hidden_layers": 12,
+            "ffn_dim": 3072,
+            "max_position_embeddings": 2048,
+            "do_layer_norm_before": True,
+            "_remove_final_layer_norm": False,
+            "word_embed_proj_dim": 768,
+            "dropout": 0.1,
+            "attention_dropout": 0.0,
+            "num_attention_heads": 12,
+            "activation_function": "relu",
+            "layerdrop": 0.0,
+            "init_std": 0.02,
+            "use_cache": True,
+            "pad_token_id": PAD_ID,
+            "bos_token_id": BOS_ID,
+            "eos_token_id": BOS_ID,
+            "enable_bias": True,
+            "layer_norm_elementwise_affine": True,
+        }
     )
 
     train_cfg = TrainConfig(
         entity="zerospeech",
-        project="zerosyl-ulm",
-        name=f"ULM-LS-ZeroSylCollapsed-v040-k-9116",
+        project="zerosyl-ulm-opt-125m",
+        name=f"OPT-125M-LibriLight-6kh-ZeroSylCollapsed-v040-k-9116",
         device="cuda",
         dtype=torch.bfloat16,
         accumulation_steps=4,
         grad_clip_max_norm=1.0,
         batch_size=10,
         num_workers=23,
-        train_segments_dir="/home/nicolvisser/Workspace/zerosyl/output/segments/ZeroSylCollapsed-v040-k-9116/LibriSpeech",
-        train_segments_pattern="train*/**/*.pt",
+        train_mmap_path="ULM-tokens-LibriLight-6kh-ZeroSylCollapsed-v040-k-9116.bin",
         valid_segments_dir="/home/nicolvisser/Workspace/zerosyl/output/segments/ZeroSylCollapsed-v040-k-9116/LibriSpeech",
         valid_segments_pattern="dev*/**/*.pt",
         train_ctx_win_size=2048,
         lr_init=0.0,
         lr_max=2e-4,
         lr_final=2e-5,
-        n_linear_steps=320,
-        n_decay_steps=4000 - 320,
+        n_linear_steps=2_000,
+        n_decay_steps=25_000 - 2_000,
         betas=(0.9, 0.98),
         weight_decay=0.01,
         eps=1e-8,
@@ -483,7 +481,7 @@ if __name__ == "__main__":
     trainer = Trainer(model_cfg, train_cfg)
 
     trainer.train(
-        max_global_step=4000,
+        max_global_step=25_000,
         log_every_n_global_steps=1,
-        validate_every_n_global_steps=250,
+        validate_every_n_global_steps=500,
     )

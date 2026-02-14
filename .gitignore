@@ -1,12 +1,8 @@
-.env
 .venv
-.python-version
 __pycache__
-checkpoints
-temp
-wandb
-script*.py
 poetry.lock
-data/waveforms
+checkpoints
 data/alignments
+data/waveforms
 output
+5895-34629-0010.flac*

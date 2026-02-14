@@ -1,5 +1,4 @@
 {
-    // Prevent Pylance from indexing huge folders
     "python.analysis.exclude": [
         "output",
         "output/**",
@@ -15,7 +14,6 @@
     "python.analysis.indexing": true,
     "python.analysis.logLevel": "Error",
 
-    // Optional but recommended: avoid watching output folder at all
     "files.watcherExclude": {
         "**/output": true,
         "**/output/**": true

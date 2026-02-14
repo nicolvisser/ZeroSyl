@@ -3,10 +3,10 @@ from typing import Callable
 from urllib.parse import urlparse
 
 import torch
+from torch.nn.utils.rnn import pad_sequence
 from torch.utils.data import DataLoader, Dataset
 from tqdm import tqdm
-
-from zerosyl.ulm import ULM
+from transformers import OPTConfig, OPTForCausalLM
 
 
 def is_url(path: str) -> bool:
@@ -16,10 +16,15 @@ def is_url(path: str) -> bool:
 
 class EncodedEvalDataset(Dataset):
     def __init__(
-        self, segments_dir: str, tokenize_fn: Callable, segments_pattern: str = "*.pt"
+        self,
+        segments_dir: str,
+        tokenize_fn: Callable,
+        pad_id: int,
+        segments_pattern: str = "*.pt",
     ):
         self.segments_paths = sorted(list(Path(segments_dir).glob(segments_pattern)))
         self.tokenize_fn = tokenize_fn
+        self.PAD_ID = pad_id
 
     def __len__(self):
         return len(self.segments_paths)
@@ -34,15 +39,19 @@ class EncodedEvalDataset(Dataset):
         tgt_tokens = tokens[1:].clone()
         return key, src_tokens, tgt_tokens
 
-
-def collate_fn(
-    batch: list[tuple[str, torch.Tensor, torch.Tensor]],
-) -> tuple[list[str], torch.Tensor, torch.Tensor, list[int]]:
-    keys = [b[0] for b in batch]
-    src_ids = torch.cat([b[1] for b in batch])
-    tgt_ids = torch.cat([b[2] for b in batch])
-    seqlens = [len(b[1]) for b in batch]
-    return keys, src_ids, tgt_ids, seqlens
+    def collate_fn(
+        self,
+        batch: list[tuple[str, torch.Tensor, torch.Tensor]],
+    ) -> tuple[list[str], torch.Tensor, torch.Tensor, list[int]]:
+        keys = [b[0] for b in batch]
+        src_ids = pad_sequence(
+            [b[1] for b in batch], batch_first=True, padding_value=self.PAD_ID
+        )
+        tgt_ids = pad_sequence(
+            [b[2] for b in batch], batch_first=True, padding_value=self.PAD_ID
+        )
+        seqlens = [len(b[1]) for b in batch]
+        return keys, src_ids, tgt_ids, seqlens
 
 
 def compute_loglikelihoods(
@@ -54,22 +63,35 @@ def compute_loglikelihoods(
     segments_pattern: str = "*.pt",
     normalize=False,
 ):
-    if checkpoint_path is None:
-        model = ULM.from_remote().cuda()
-    elif is_url(str(checkpoint_path)):
-        model = ULM.from_remote(str(checkpoint_path)).cuda()
+    if is_url(str(checkpoint_path)):
+        checkpoint = torch.hub.load_state_dict_from_url(checkpoint_path)
     else:
-        model = ULM.from_pretrained_checkpoint(checkpoint_path).cuda()
+        checkpoint = torch.load(checkpoint_path)
 
+    cfg = OPTConfig(**checkpoint["cfg"])
+    model = OPTForCausalLM(cfg)
+    model.load_state_dict(checkpoint["model"])
     model.eval()
+    model.to("cuda")
     num_params = sum(map(torch.numel, model.parameters()))
-    print(f"Model loaded with {num_params,} parameters.")
+    print(f"Model loaded with {num_params:,} parameters.")
+
+    def tokenize(units: torch.Tensor) -> torch.Tensor:
+        tokens = torch.cat(
+            [
+                torch.tensor(
+                    [model.config.bos_token_id], dtype=torch.long, device=units.device
+                ),
+                units.long(),
+            ]
+        )
+        return tokens
 
     print(f"Computing loglikelihoods for units in {segments_dir}...")
-
     dataset = EncodedEvalDataset(
         segments_dir=segments_dir,
-        tokenize_fn=model.tokenize,
+        tokenize_fn=tokenize,
+        pad_id=model.config.pad_token_id,
         segments_pattern=segments_pattern,
     )
 
@@ -79,25 +101,25 @@ def compute_loglikelihoods(
         dataset,
         batch_size=batch_size,
         shuffle=False,
-        collate_fn=collate_fn,
+        collate_fn=dataset.collate_fn,
         num_workers=num_workers,
     )
 
     data = []
     with torch.inference_mode():
         for keys, src_ids, tgt_ids, seqlens in tqdm(dataloader):
-            logits = model.forward(src_ids.cuda(), seqlens=seqlens)
+            bsz = src_ids.size(0)
+            logits = model.forward(src_ids.cuda()).logits
             neg_obs_log_probs = torch.nn.functional.cross_entropy(
-                logits, tgt_ids.cuda(), reduction="none"
-            )
+                input=logits.view(-1, logits.size(-1)),
+                target=tgt_ids.view(-1).cuda(),
+                reduction="none",
+            ).view(bsz, -1)
 
-            starts = [sum(seqlens[:i]) for i in range(len(seqlens))]
-            stops = [starts[i] + seqlens[i] for i in range(len(seqlens))]
-
-            for key, start, stop in zip(keys, starts, stops):
-                ll = -neg_obs_log_probs[start:stop].sum().item()
+            for b, (key, seqlen) in enumerate(zip(keys, seqlens)):
+                ll = -neg_obs_log_probs[b, :seqlen].sum().item()
                 if normalize:
-                    ll /= stop - start
+                    ll /= seqlen
                 data.append((key, ll))
 
     strings = [f"{key} {ll}" for key, ll in data]

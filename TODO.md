@@ -1,10 +1,7 @@
 - Reference code
     - Simon Malan's boundary evaluation
-    - Mistral implementation
     - Microsoft WavLM
-- Figure out how you will make the intelligibility experiments reproducable
+- Add acoustic model
 - Write continuation code and synthesize those
 - Generate samples for demo website
-- Add reproduce section for intelligibility in README.md 
-- Add reproduce section for langauge modeling in README.md
 - Add synthesizing a waveform to the CLI

@@ -3,119 +3,95 @@ from typing import Literal
 
 import torch
 import typer
-from rich.progress import track
-from torchcodec.decoders import AudioDecoder
 
-from zerosyl import AcousticModel, ZeroSylCollapsed, ZeroSylContinuous, ZeroSylDiscrete
-
-app = typer.Typer(add_completion=False)
+app = typer.Typer()
 
 eval_app = typer.Typer(help="Evaluation utilities")
-app.add_typer(eval_app, name="eval")
+app.add_typer(eval_app, name="evaluate")
 
 
 @app.command()
 def encode(
-    input_path: Path = typer.Argument(..., help="Input file or directory."),
-    output_path: Path = typer.Argument(..., help="Output file or directory."),
-    output: Literal["continuous", "discrete", "collapsed"] = typer.Option(
+    input_dir: Path = typer.Argument(
+        ...,
+        help="Input directory with audio.",
+        exists=True,
+        file_okay=False,
+        dir_okay=True,
+    ),
+    output_dir: Path = typer.Argument(..., help="Output directory for segments."),
+    input_pattern: str = typer.Option(
+        "*.wav", help="Glob pattern to match input audio files."
+    ),
+    output_format: Literal["continuous", "discrete", "collapsed"] = typer.Option(
         "collapsed",
         "--output",
         help='Choose output type: "continuous" or "discrete" or "collapsed".',
     ),
-    extension: str = typer.Option(
-        ".wav", "--extension", "-e", help="Audio extension to process."
+    device: str = typer.Option(
+        "cuda" if torch.cuda.is_available() else "cpu",
+        help="Device to run WavLM on (e.g., 'cuda' or 'cpu').",
+    ),
+    batch_size: int = typer.Option(
+        None,
+        min=1,
+        help="Batch size for encoding. If set, a parallel job is started, which is helpful for large datasets. Adjust based on your GPU memory.",
+    ),
+    num_data_workers: int = typer.Option(
+        4,
+        min=1,
+        help="Number of data workers for loading data if running a parallel job.",
+    ),
+    num_logic_workers: int = typer.Option(
+        1,
+        min=1,
+        help="Number of logic workers for boundary detection if running a parallel job.",
     ),
 ):
     """
-    Segment waveform(s) into syllabic segments and save the output as .pt file(s).
+    Segment waveforms in a directory into syllabic segments and save the output as .pt files.
 
     -----------------------------------------------------------------------------
 
-    - If input_path is a file: produce one output file.
-
-    - If input_path is a directory: process all audio files inside.
-
-    -----------------------------------------------------------------------------
-
-    - If --output is "continuous", save the continuous representations.
+    - If --output is [green]continuous[/green], save the continuous representations.
     Each output file is a dictionary with keys: "starts", "ends" and "embeddings".
-    "starts" and "ends" are long tensors containing frame indices.
+    "starts" and "ends" are long tensors containing frame indices (divide by 50 Hz to get ).
     "embeddings" is a float32 tensor with one 1024-dimensional embedding per segment.
 
-    - If --output is "discrete" save the segments with a K-means cluster ID (one of 10,000 types) associated with each segment. One of 10,000 values.
+    - If --output is [green]discrete[/green] save the segments with a K-means cluster ID (one of 10,000 types) associated with each segment. One of 10,000 values.
+    Each output file is a torch.long tensor with shape [num_segments, 3]. The columns are: start frame index, end frame index, cluster ID.
 
-    - If --output is "collapsed" save the segments with an K-means cluster ID (one of 9,116 types) associated with each segment, where all the centroids that correspond to silences are mapped to a single id, SIL=9115.
+    - If --output is [green]collapsed[/green] save the segments with an K-means cluster ID (one of 9,116 types) associated with each segment, where all the centroids that correspond to silences are mapped to a single id, SIL=9115.
+    Each output file is a torch.long tensor with shape [num_segments, 3]. The columns are: start frame index, end frame index, unit ID.
 
     -----------------------------------------------------------------------------
 
     """
 
-    input_path_list: list[Path] = None
-    output_path_list: list[Path] = None
+    from zerosyl.utils.encode import encode, encode_parallel
 
-    if input_path.is_file():
-        input_path_list = [input_path]
-        output_path_list = [output_path]
+    if batch_size is None:
+        # run single-threaded encoding
 
-    elif input_path.is_dir():
-
-        typer.echo(f"Finding input files...")
-        input_path_list = sorted(input_path.rglob(f"*{extension}"))
-
-        if len(input_path_list) == 0:
-            typer.echo(
-                f"No {extension} files found. Check input_path or supply different extension with --extension",
-                err=True,
-            )
-            raise typer.Exit(code=1)
-
-        if output_path.is_file():
-            typer.echo(
-                "Output path cannot be a file if the input path is a directory",
-                err=True,
-            )
-            raise typer.Exit(code=1)
-
-        rel_path_list = [p.relative_to(input_path) for p in input_path_list]
-        output_path_list = [output_path / p.with_suffix(".pt") for p in rel_path_list]
-
+        encode(
+            input_dir=input_dir,
+            output_dir=output_dir,
+            input_pattern=input_pattern,
+            output_format=output_format,
+            device=device,
+        )
     else:
-        typer.echo("Input not found.", err=True)
-        raise typer.Exit(code=1)
-
-    typer.echo(f"Loading model...")
-
-    if output == "continuous":
-        zerosyl_continuous = ZeroSylContinuous.from_remote().cuda()
-    elif output == "discrete":
-        zerosyl_discrete = ZeroSylDiscrete.from_remote().cuda()
-    elif output == "collapsed":
-        zerosyl_collapsed = ZeroSylCollapsed.from_remote().cuda()
-
-    for input_path, output_path in track(
-        zip(input_path_list, output_path_list),
-        description="Encoding...",
-        total=len(input_path_list),
-        disable=len(input_path_list) <= 1,
-    ):
-        decoder = AudioDecoder(input_path, sample_rate=16000, num_channels=1)
-        wav = decoder.get_all_samples().data.cuda()
-
-        if output == "continuous":
-            starts, ends, embeddings = zerosyl_continuous.encode(wav)
-            output = {"starts": starts, "ends": ends, "embeddings": embeddings}
-        elif output == "discrete":
-            starts, ends, ids = zerosyl_discrete.encode(wav)
-            output_data = torch.stack([starts, ends, ids], dim=1).cpu()
-        elif output == "collapsed":
-            starts, ends, ids = zerosyl_collapsed.encode(wav)
-            output_data = torch.stack([starts, ends, ids], dim=1).cpu()
-
-        output_path.parent.mkdir(parents=True, exist_ok=True)
-        torch.save(output_data, output_path)
-
-    typer.echo(f"Done!")
+        # run parallel encoding
+        encode_parallel(
+            input_dir=input_dir,
+            output_dir=output_dir,
+            input_pattern=input_pattern,
+            output_format=output_format,
+            device=device,
+            batch_size=batch_size,
+            num_data_workers=num_data_workers,
+            num_logic_workers=num_logic_workers,
+        )
 
 
 @eval_app.command()
@@ -239,7 +215,7 @@ def clustering(
 
 
 @eval_app.command()
-def loglikelihood(
+def loglikelihoods(
     segments_dir: Path = typer.Argument(
         ...,
         exists=True,
@@ -294,3 +270,29 @@ def loglikelihood(
         segments_pattern=segments_pattern,
         normalize=normalize,
     )
+
+
+@eval_app.command()
+def tsc(
+    loglikelihoods_file: Path = typer.Argument(
+        ...,
+        exists=True,
+        file_okay=True,
+        dir_okay=False,
+        help="Path to the log-likelihoods .txt file.",
+    )
+):
+    """
+    Compute the TSC metric from a log-likelihoods file.
+
+    - The log-likelihoods file should be a text file where each line contains: <segment-file-stem> <log-likelihood>.
+    """
+
+    from zerosyl.eval.tsc import eval_tsc
+
+    if loglikelihoods_file.suffix.lower() != ".txt":
+        raise typer.BadParameter("loglikelihoods_file must have a .txt extension")
+
+    score = eval_tsc(loglikelihoods_file)
+
+    typer.echo(f"TSC Score: {score:.4f}")

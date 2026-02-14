@@ -316,7 +316,6 @@ class WavLM(nn.Module):
     @classmethod
     def from_remote(cls):
         checkpoint = torch.hub.load_state_dict_from_url(
-            # "https://github.com/nicolvisser/ZeroSyl/releases/download/v0.4.0/WavLM-Large.pt"
             "https://storage.googleapis.com/zerospeech-checkpoints/WavLM-Large.pt"
         )
         cfg = WavLMConfig(checkpoint["cfg"])
@@ -535,7 +534,7 @@ class ConvFeatureExtractionModel(nn.Module):
             self.conv_layers = nn.ModuleList()
             for i, cl in enumerate(conv_layers):
                 assert len(cl) == 3, "invalid conv definition: " + str(cl)
-                (dim, k, stride) = cl
+                dim, k, stride = cl
 
                 self.conv_layers.append(
                     block(
@@ -554,7 +553,7 @@ class ConvFeatureExtractionModel(nn.Module):
             self.conv_layers = nn.ModuleList()
             for i, cl in enumerate(conv_layers):
                 assert len(cl) == 3
-                (dim, k, stride) = cl
+                dim, k, stride = cl
 
                 self.conv_layers.append(torch.nn.Conv2d(in_d, dim, k, stride))
                 self.conv_layers.append(torch.nn.ReLU())
@@ -565,7 +564,7 @@ class ConvFeatureExtractionModel(nn.Module):
             self.conv_layers = nn.ModuleList()
             for i, cl in enumerate(conv_layers):
                 assert len(cl) == 3
-                (dim, k, stride) = cl
+                dim, k, stride = cl
                 self.conv_layers.append(
                     torch.nn.Conv2d(in_d, dim, k, stride, padding=1)
                 )

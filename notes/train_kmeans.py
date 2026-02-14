@@ -7,11 +7,10 @@ from sklearn.cluster import kmeans_plusplus
 from torchcodec.decoders import AudioDecoder
 from tqdm.autonotebook import tqdm
 
-from zerosyl.encoder import ZeroSylContinuous
+from zerosyl import ZeroSylContinuous
 
 checkpoint_path = Path("checkpoints/WavLM-Large.pt")
 waveform_dir = Path("/home/nicolvisser/Data/waveforms/LibriSpeech")
-output_dir = Path("checkpoints/zerosyl-kmeans-v040")
 num_clusters = 10000
 
 assert checkpoint_path.exists()
