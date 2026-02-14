@@ -1,8 +1,8 @@
 # ZeroSyl: Simple Zero-Resource Speech Tokenization for Spoken Language Modeling
 
 [![paper](https://img.shields.io/badge/Paper-Read-%23b31b1b?logo=arXiv&logoColor=%23b31b1b)](https://www.youtube.com/watch?v=dQw4w9WgXcQ)
-[![demo](https://img.shields.io/badge/Demo-Open%20in%20Collab-%23F9AB00?style=flat&logo=googlecolab&logoColor=%23F9AB00)](link=https://www.youtube.com/watch?v=dQw4w9WgXcQ)
-[![bibtex](https://img.shields.io/badge/BibTeX-Cite-008080?style=flat&logo=latex&logoColor=%23008080)](link=https://www.youtube.com/watch?v=dQw4w9WgXcQ)
+[![demo](https://img.shields.io/badge/Demo-Open%20in%20Collab-%23F9AB00?style=flat&logo=googlecolab&logoColor=%23F9AB00)](https://colab.research.google.com/github/nicolvisser/ZeroSyl/blob/master/quickstart.ipynb)
+[![bibtex](https://img.shields.io/badge/BibTeX-Cite-008080?style=flat&logo=latex&logoColor=%23008080)](https://www.youtube.com/watch?v=dQw4w9WgXcQ)
 [![license](https://img.shields.io/badge/Licence-View-blue.svg?logo=data:image/svg%2bxml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIyNCIgaGVpZ2h0PSIyNCIgdmlld0JveD0iMCAwIDI0IDI0IiBmaWxsPSJub25lIiBzdHJva2U9IndoaXRlIiBzdHJva2Utd2lkdGg9IjIiIHN0cm9rZS1saW5lY2FwPSJyb3VuZCIgc3Ryb2tlLWxpbmVqb2luPSJyb3VuZCIgY2xhc3M9Imx1Y2lkZSBsdWNpZGUtc2NhbGUtaWNvbiBsdWNpZGUtc2NhbGUiPjxwYXRoIGQ9Ik0xMiAzdjE4Ii8+PHBhdGggZD0ibTE5IDggMyA4YTUgNSAwIDAgMS02IDB6VjciLz48cGF0aCBkPSJNMyA3aDFhMTcgMTcgMCAwIDAgOC0yIDE3IDE3IDAgMCAwIDggMmgyIi8+PHBhdGggZD0ibTUgOCAzIDhhNSA1IDAgMCAxLTYgMHpWNyIvPjxwYXRoIGQ9Ik03IDIxaDEwIi8+PC9zdmc+&logoColor=blue)](./LICENCE)
 
 Spoken language models (a.k.a. pure speech language models) are language models that operate on speech signals. No text is used anywhere in the pipeline. Not during training and neither during inference.
