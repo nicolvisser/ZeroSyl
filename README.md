@@ -11,7 +11,7 @@ ZeroSyl is a simple method for extracting syllabic units from a WavLM Large mode
 # Installation
 
 ```sh
-pip install zerosyl
+pip install git+https://github.com/nicolvisser/ZeroSyl
 ```
 
 # Basic usage
