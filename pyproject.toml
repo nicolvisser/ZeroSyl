@@ -1,6 +1,6 @@
 [project]
 name = "zerosyl"
-version = "1.0.3"
+version = "1.0.4"
 description = "Simple zero-resource syllable tokenization for spoken language modeling"
 authors = [
     {name = "nicolvisser",email = "vissernicol@gmail.com"}
