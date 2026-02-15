@@ -213,7 +213,7 @@ class ZeroSylDiscrete(ZeroSylContinuous):
         embeddings = embeddings.cpu().numpy()
         faiss.normalize_L2(embeddings)
         _, ids = self.index.search(embeddings, 1)
-        ids = torch.from_numpy(ids).squeeze(0).to(wav.device)
+        ids = torch.from_numpy(ids).squeeze(1).to(wav.device)
         return starts, ends, ids
 
 
