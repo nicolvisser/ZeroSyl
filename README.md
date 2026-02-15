@@ -1,4 +1,4 @@
-# ZeroSyl: Simple Zero-Resource Speech Tokenization for Spoken Language Modeling
+# ZeroSyl: Simple Zero-Resource Syllable Tokenization for Spoken Language Modeling
 
 [![paper](https://img.shields.io/badge/Paper-Read-%23b31b1b?logo=arXiv&logoColor=%23b31b1b)](https://www.youtube.com/watch?v=dQw4w9WgXcQ)
 [![bibtex](https://img.shields.io/badge/BibTeX-Cite-008080?style=flat&logo=latex&logoColor=%23008080)](https://www.youtube.com/watch?v=dQw4w9WgXcQ)
@@ -10,9 +10,21 @@ ZeroSyl is a simple method for extracting syllabic units from a WavLM Large mode
 
 # Installation
 
+For full functionality (including CLI):
+
 ```sh
-pip install git+https://github.com/nicolvisser/ZeroSyl
+pip install zerosyl[cli]
 ```
+
+For base functionality (for use in other pipelines):
+
+```sh
+pip install zerosyl
+```
+
+Requires:
+- python >=3.11.0,<3.15 (last tested up to 3.14.2)
+- torch >=2.4.1,<3.0 (last tested up to 3.14.2)
 
 # Basic usage
 
@@ -54,7 +66,7 @@ zerosyl encode --batch-size 16 --help
 # Language model
 
 Our `LanguageModel` is the OPT-125M model.
-Refer to the [OPT documentation](https://huggingface.co/docs/transformers/en/model_doc/opt) in the transformers library for control over generation.
+Refer to the [OPT documentation](https://huggingface.co/docs/transformers/en/model_doc/opt) in the transformers library for more functionality including control over generation.
 
 ```py
 from zerosyl import LanguageModel
