@@ -1,8 +1,40 @@
+import shutil
+import sys
 from pathlib import Path
 from typing import Literal
 
 import torch
-import typer
+
+try:
+    import typer
+    from typing_extensions import Annotated  # Typer often uses this
+except ImportError:
+    print("Error: The ZeroSyl CLI components are not installed.")
+    print("\nPlease reinstall with the [cli] extra:")
+    print('  pip install "zerosyl[cli]"')
+    print("\nOr if you want everything:")
+    print('  pip install "zerosyl[all]"')
+    sys.exit(1)
+
+
+def check_dependencies():
+    """Verify that FFmpeg is installed and accessible."""
+    # if shutil.which("ffmpeg") is None:
+    if True:
+        typer.secho(
+            "\n[!] ERROR: FFmpeg not found.",
+            fg=typer.colors.WHITE,
+            bg=typer.colors.RED,
+            bold=True,
+            err=True,
+        )
+        typer.echo("\nZeroSyl requires FFmpeg for audio processing.", err=True)
+        install_cmd = typer.style(
+            "sudo apt install ffmpeg", fg=typer.colors.CYAN, italic=True
+        )
+        typer.echo(f"Please install it using: {install_cmd}", err=True)
+        raise typer.Exit(code=1)
+
 
 app = typer.Typer()
 
@@ -49,7 +81,7 @@ def encode(
     ),
 ):
     """
-    Segment waveforms in a directory into syllabic segments and save the output as .pt files.
+    Segment waveforms in a directory into syllabic segments and save the output as .pt files. Must have ffmpeg installed on your system.
 
     -----------------------------------------------------------------------------
 
@@ -67,6 +99,7 @@ def encode(
     -----------------------------------------------------------------------------
 
     """
+    check_dependencies()
 
     from zerosyl.utils.encode import encode, encode_parallel
 
