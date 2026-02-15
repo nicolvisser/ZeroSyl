@@ -3,7 +3,8 @@
 <!-- [![paper](https://img.shields.io/badge/Paper-Read-%23b31b1b?logo=arXiv&logoColor=%23b31b1b)](https://www.youtube.com/watch?v=dQw4w9WgXcQ)
 [![bibtex](https://img.shields.io/badge/BibTeX-Cite-008080?style=flat&logo=latex&logoColor=%23008080)](https://www.youtube.com/watch?v=dQw4w9WgXcQ) -->
 [![license](https://img.shields.io/badge/Licence-View-blue.svg?logo=data:image/svg%2bxml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIyNCIgaGVpZ2h0PSIyNCIgdmlld0JveD0iMCAwIDI0IDI0IiBmaWxsPSJub25lIiBzdHJva2U9IndoaXRlIiBzdHJva2Utd2lkdGg9IjIiIHN0cm9rZS1saW5lY2FwPSJyb3VuZCIgc3Ryb2tlLWxpbmVqb2luPSJyb3VuZCIgY2xhc3M9Imx1Y2lkZSBsdWNpZGUtc2NhbGUtaWNvbiBsdWNpZGUtc2NhbGUiPjxwYXRoIGQ9Ik0xMiAzdjE4Ii8+PHBhdGggZD0ibTE5IDggMyA4YTUgNSAwIDAgMS02IDB6VjciLz48cGF0aCBkPSJNMyA3aDFhMTcgMTcgMCAwIDAgOC0yIDE3IDE3IDAgMCAwIDggMmgyIi8+PHBhdGggZD0ibTUgOCAzIDhhNSA1IDAgMCAxLTYgMHpWNyIvPjxwYXRoIGQ9Ik03IDIxaDEwIi8+PC9zdmc+&logoColor=blue)](./LICENCE)
-[![bibtex](https://img.shields.io/badge/Quick%20start-Open%20in%20Collab-F9AB00?style=flat&logo=googlecolab&logoColor=F9AB00)](https://colab.research.google.com/github/nicolvisser/ZeroSyl/blob/master/quickstart.ipynb)
+[![quickstart](https://img.shields.io/badge/Quick%20start-Open%20in%20Collab-F9AB00?style=flat&logo=googlecolab&logoColor=F9AB00)](https://colab.research.google.com/github/nicolvisser/ZeroSyl/blob/master/quickstart.ipynb)
+[![explainer](https://img.shields.io/badge/Explainer-Open%20in%20Collab-F9AB00?style=flat&logo=googlecolab&logoColor=F9AB00)](https://colab.research.google.com/github/nicolvisser/ZeroSyl/blob/master/explainer.ipynb)
 
 Spoken language models (a.k.a. pure speech language models) are language models that operate on speech signals. No text is used anywhere in the pipeline. Not during training and neither during inference.
 
@@ -99,14 +100,11 @@ zerosyl evaluate --help
 For those interested in the method, you have several places to start:
 
 1. Our paper will be available or arXiv soon.
-2. Cloning the repo and working through [explainer.ipynb](explainer.ipynb) and [demo-detect-boundaries.ipynb](demo-detect-boundaries.ipynb).
-    ```
-    git clone https://github.com/nicolvisser/ZeroSyl/
-    ```
-3. The core module [zerosyl/zerosyl.py](zerosyl/zerosyl.py) that houses
+2. Working through the [explainer.ipynb](explainer.ipynb) notebook: [![explainer](https://img.shields.io/badge/Explainer-Open%20in%20Collab-F9AB00?style=flat&logo=googlecolab&logoColor=F9AB00)](https://colab.research.google.com/github/nicolvisser/ZeroSyl/blob/master/quickstart.ipynb)
+3. Looking at the core module [zerosyl/zerosyl.py](zerosyl/zerosyl.py) that houses
     - `ZeroSylContinuous` - a wrapper around `WavLM` to add the boundary detection and meanpooling logic.
     - `ZeroSylDiscrete` - a wrapper around `ZeroSylContinuous` to add K-means discretization.
     - `ZeroSylCollapsed` - a wrapper around `ZeroSylDiscrete` to add silence handling.
 
-There is also more information on reproducing the results in the paper inside [reproduce.py](reproduce.py) and [notes/](notes)
+There is also more information on reproducing the results in the paper inside [notes/](notes) and [reproduce.py](reproduce.py).
 

@@ -10,6 +10,10 @@ See [encoding_with_other_systems/](encoding_with_other_systems/).
 
 See [train_kmeans.py](train_kmeans.py).
 
+## Finding out which centroids correspond to silence
+
+See [find_codebook_silences.py](find_codebook_silences.py).
+
 ## Evaluating boundaries
 
 To obtain exactly the boundary scores in the paper, we tuned the encoders (during evaluation only) with a constant shift. See [constant_shift/](constant_shift/).
