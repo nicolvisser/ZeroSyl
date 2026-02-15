@@ -57,7 +57,9 @@ class EncodedEvalDataset(Dataset):
 def compute_loglikelihoods(
     segments_dir: str | Path,
     output_path: str | Path,
-    checkpoint_path: str | Path | None = None,
+    checkpoint_path: (
+        str | Path
+    ) = "https://storage.googleapis.com/zerospeech-checkpoints/OPT-125M-LibriLight-60kh-ZeroSylCollapsed-v040-k-9116.pt",
     batch_size: int = 64,
     num_workers: int = 8,
     segments_pattern: str = "*.pt",

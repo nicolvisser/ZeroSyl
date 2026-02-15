@@ -261,7 +261,7 @@ def loglikelihoods(
         help="Where to write the log-likelihood text file.",
     ),
     checkpoint_path: str = typer.Option(
-        None,
+        "https://storage.googleapis.com/zerospeech-checkpoints/OPT-125M-LibriLight-60kh-ZeroSylCollapsed-v040-k-9116.pt",
         help="Optional path or URL to the model checkpoint. Leave empty to download the default model remotely.",
     ),
     batch_size: int = typer.Option(
