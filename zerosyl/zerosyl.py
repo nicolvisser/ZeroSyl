@@ -213,7 +213,7 @@ class ZeroSylDiscrete(ZeroSylContinuous):
         embeddings = embeddings.cpu().numpy()
         faiss.normalize_L2(embeddings)
         _, ids = self.index.search(embeddings, 1)
-        ids = torch.from_numpy(ids).squeeze().to(wav.device)
+        ids = torch.from_numpy(ids).squeeze(0).to(wav.device)
         return starts, ends, ids
 
 
@@ -307,6 +307,9 @@ class ZeroSylCollapsed(ZeroSylDiscrete):
 
         # remap such that there is only one silence type
         ids = self.mapping[ids]
+
+        if len(ids) == 1:
+            return starts, ends, ids
 
         # merge duplicate SIL segments
         not_repeated = torch.ones_like(ids, dtype=torch.bool)
