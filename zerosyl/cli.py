@@ -20,7 +20,7 @@ except ImportError:
 def check_dependencies():
     """Verify that FFmpeg is installed and accessible."""
     # if shutil.which("ffmpeg") is None:
-    if True:
+    if shutil.which("ffmpeg") is None:
         typer.secho(
             "\n[!] ERROR: FFmpeg not found.",
             fg=typer.colors.WHITE,
