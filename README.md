@@ -6,9 +6,9 @@
 [![quickstart](https://img.shields.io/badge/Quick%20start-Open%20in%20Collab-F9AB00?style=flat&logo=googlecolab&logoColor=F9AB00)](https://colab.research.google.com/github/nicolvisser/ZeroSyl/blob/master/quickstart.ipynb)
 [![explainer](https://img.shields.io/badge/Explainer-Open%20in%20Collab-F9AB00?style=flat&logo=googlecolab&logoColor=F9AB00)](https://colab.research.google.com/github/nicolvisser/ZeroSyl/blob/master/explainer.ipynb)
 
-Spoken language models (a.k.a. pure speech language models) are language models that operate on speech signals. No text is used anywhere in the pipeline. Not during training and neither during inference.
+Spoken language models (pure speech language models) learn language directly from unlabeled. No text is used anywhere in the pipeline.
 
-ZeroSyl is a simple method for extracting syllabic units from a WavLM Large model, without requiring to train a complex boundary detector like in previous work.
+ZeroSyl is a simple method for extracting syllable-like units from a WavLM Large model, without requiring to train a complex boundary detector like in previous works.
 
 # Installation
 
@@ -18,7 +18,7 @@ For full functionality (including CLI):
 pip install zerosyl[cli]
 ```
 
-For base functionality (for use in other pipelines):
+For base functionality (in other pipelines):
 
 ```sh
 pip install zerosyl
@@ -26,11 +26,11 @@ pip install zerosyl
 
 Requires:
 - python >=3.11.0,<3.15 (last tested up to 3.14.2)
-- torch >=2.4.1,<3.0 (last tested up to 3.14.2)
+- torch >=2.4.1,<3.0 (last tested up to 2.10.0)
 
 # Basic usage
 
-[![bibtex](https://img.shields.io/badge/Quick%20start-Open%20in%20Collab-F9AB00?style=flat&logo=googlecolab&logoColor=F9AB00)](https://colab.research.google.com/github/nicolvisser/ZeroSyl/blob/master/quickstart.ipynb)
+[![quickstart](https://img.shields.io/badge/Quick%20start-Open%20in%20Collab-F9AB00?style=flat&logo=googlecolab&logoColor=F9AB00)](https://colab.research.google.com/github/nicolvisser/ZeroSyl/blob/master/quickstart.ipynb)
 
 For continuous embeddings:
 ```py
@@ -99,7 +99,7 @@ zerosyl evaluate --help
 
 For those interested in the method, you have several places to start:
 
-1. Our paper will be available or arXiv soon.
+1. Our paper will be available on arXiv soon.
 2. Working through the [explainer.ipynb](explainer.ipynb) notebook: [![explainer](https://img.shields.io/badge/Explainer-Open%20in%20Collab-F9AB00?style=flat&logo=googlecolab&logoColor=F9AB00)](https://colab.research.google.com/github/nicolvisser/ZeroSyl/blob/master/quickstart.ipynb)
 3. Looking at the core module [zerosyl/zerosyl.py](zerosyl/zerosyl.py) that houses
     - `ZeroSylContinuous` - a wrapper around `WavLM` to add the boundary detection and meanpooling logic.
