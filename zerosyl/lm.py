@@ -55,8 +55,11 @@ class LanguageModel(OPTForCausalLM):
     def from_remote(
         cls,
         checkpoint_url: str = "https://storage.googleapis.com/zerospeech-checkpoints/OPT-125M-LibriLight-60kh-ZeroSylCollapsed-v040-k-9116.pt",
+        map_location: str = "cpu",
     ) -> "LanguageModel":
-        checkpoint = torch.hub.load_state_dict_from_url(checkpoint_url)
+        checkpoint = torch.hub.load_state_dict_from_url(
+            checkpoint_url, map_location=map_location
+        )
         cfg = OPTConfig(**checkpoint["cfg"])
         model = cls(cfg)
         model.load_state_dict(checkpoint["model"])

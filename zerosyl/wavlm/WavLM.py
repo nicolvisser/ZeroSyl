@@ -314,9 +314,10 @@ class WavLM(nn.Module):
         return model
 
     @classmethod
-    def from_remote(cls):
+    def from_remote(cls, map_location: str = "cpu"):
         checkpoint = torch.hub.load_state_dict_from_url(
-            "https://storage.googleapis.com/zerospeech-checkpoints/WavLM-Large.pt"
+            "https://storage.googleapis.com/zerospeech-checkpoints/WavLM-Large.pt",
+            map_location=map_location,
         )
         cfg = WavLMConfig(checkpoint["cfg"])
         model = cls(cfg)

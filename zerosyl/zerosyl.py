@@ -179,7 +179,7 @@ class ZeroSylDiscrete(ZeroSylContinuous):
         return model
 
     @classmethod
-    def from_remote(cls) -> "ZeroSylDiscrete":
+    def from_remote(cls, map_location: str = "cpu") -> "ZeroSylDiscrete":
         """Download pretrained weights + centroids from remote storage.
 
         Returns an eval-mode ``ZeroSylDiscrete`` instance. Network
@@ -187,10 +187,12 @@ class ZeroSylDiscrete(ZeroSylContinuous):
         """
 
         checkpoint = torch.hub.load_state_dict_from_url(
-            "https://storage.googleapis.com/zerospeech-checkpoints/WavLM-Large.pt"
+            "https://storage.googleapis.com/zerospeech-checkpoints/WavLM-Large.pt",
+            map_location=map_location,
         )
         centroids = torch.hub.load_state_dict_from_url(
-            "https://storage.googleapis.com/zerospeech-checkpoints/zerosyl-v040-centroids-k-10000.pt"
+            "https://storage.googleapis.com/zerospeech-checkpoints/zerosyl-v040-centroids-k-10000.pt",
+            map_location=map_location,
         )
         cfg = WavLMConfig(checkpoint["cfg"])
         model = cls(cfg, centroids)
@@ -269,7 +271,7 @@ class ZeroSylCollapsed(ZeroSylDiscrete):
         return model
 
     @classmethod
-    def from_remote(cls) -> "ZeroSylCollapsed":
+    def from_remote(cls, map_location: str = "cpu") -> "ZeroSylCollapsed":
         """Download pretrained weights, centroids and silence mask remotely."""
 
         checkpoint = torch.hub.load_state_dict_from_url(
