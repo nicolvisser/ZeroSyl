@@ -98,7 +98,7 @@ zerosyl evaluate --help
 
 For those interested in the method, you have several places to start:
 
-1. Our paper will be available on arXiv soon.
+1. Read our [paper](https://www.arxiv.org/pdf/2602.15537).
 2. Working through the [explainer.ipynb](explainer.ipynb) notebook: [![explainer](https://img.shields.io/badge/Explainer-Open%20in%20Collab-F9AB00?style=flat&logo=googlecolab&logoColor=F9AB00)](https://colab.research.google.com/github/nicolvisser/ZeroSyl/blob/master/quickstart.ipynb)
 3. Looking at the core module [zerosyl/zerosyl.py](zerosyl/zerosyl.py) that houses
     - `ZeroSylContinuous` - a wrapper around `WavLM` to add the boundary detection and meanpooling logic.
