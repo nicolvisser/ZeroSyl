@@ -107,3 +107,12 @@ For those interested in the method, you have several places to start:
 
 There is also more information on reproducing the results in the paper inside [notes/](notes) and [reproduce.py](reproduce.py).
 
+# Checkpoints
+
+- [WavLM Large](https://storage.googleapis.com/zerospeech-checkpoints/WavLM-Large.pt)
+- [Spherical K-means centroids](https://storage.googleapis.com/zerospeech-checkpoints/zerosyl-v040-centroids-k-10000.pt) (K=10000, trained on `ZeroSylContinuous` embeddings, 100h of LibriSpeech train-clean-100)
+  - [Codebook silences](https://storage.googleapis.com/zerospeech-checkpoints/zerosyl-v040-silences-k-10000.pt) (A boolean tensor shape `[10000,]` with `True` if centroid represents silence)
+- OPT-125M langauge models trained on `ZeroSylCollapsed` tokens 
+    - [600h of Libri-Light](https://storage.googleapis.com/zerospeech-checkpoints/OPT-125M-LibriLight-600h-ZeroSylCollapsed-v040-k-9116.pt)
+    - [6kh of Libri-Light](https://storage.googleapis.com/zerospeech-checkpoints/OPT-125M-LibriLight-6kh-ZeroSylCollapsed-v040-k-9116.pt)
+    - [60kh of Libri-Light](https://storage.googleapis.com/zerospeech-checkpoints/OPT-125M-LibriLight-60kh-ZeroSylCollapsed-v040-k-9116.pt)
