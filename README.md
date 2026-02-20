@@ -5,7 +5,7 @@
 [![explainer](https://img.shields.io/badge/Explainer-Open%20in%20Collab-F9AB00?style=flat&logo=googlecolab&logoColor=F9AB00)](https://colab.research.google.com/github/nicolvisser/ZeroSyl/blob/master/explainer.ipynb)
 [![license](https://img.shields.io/badge/Licence-View-blue.svg?logo=data:image/svg%2bxml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIyNCIgaGVpZ2h0PSIyNCIgdmlld0JveD0iMCAwIDI0IDI0IiBmaWxsPSJub25lIiBzdHJva2U9IndoaXRlIiBzdHJva2Utd2lkdGg9IjIiIHN0cm9rZS1saW5lY2FwPSJyb3VuZCIgc3Ryb2tlLWxpbmVqb2luPSJyb3VuZCIgY2xhc3M9Imx1Y2lkZSBsdWNpZGUtc2NhbGUtaWNvbiBsdWNpZGUtc2NhbGUiPjxwYXRoIGQ9Ik0xMiAzdjE4Ii8+PHBhdGggZD0ibTE5IDggMyA4YTUgNSAwIDAgMS02IDB6VjciLz48cGF0aCBkPSJNMyA3aDFhMTcgMTcgMCAwIDAgOC0yIDE3IDE3IDAgMCAwIDggMmgyIi8+PHBhdGggZD0ibTUgOCAzIDhhNSA1IDAgMCAxLTYgMHpWNyIvPjxwYXRoIGQ9Ik03IDIxaDEwIi8+PC9zdmc+&logoColor=blue)](./LICENCE)
 
-Spoken language models (pure speech language models) learn language directly from unlabeled. No text is used anywhere in the pipeline.
+Spoken language models (pure speech language models) learn language directly from unlabeled speech. No text is used anywhere in the pipeline.
 
 ZeroSyl is a simple method for extracting syllable-like units from a WavLM Large model, without requiring to train a complex boundary detector like in previous works.
 
